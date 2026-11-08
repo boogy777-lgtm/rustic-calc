@@ -23,6 +23,8 @@ are included. Code signing requires a separately approved secure setup.
 
 The ordinary CI installs no integration into the runner's real CMD profile;
 `Test-CalcCommand.ps1` uses an isolated registry test key. Screenshot tests launch
-the GUI with an automatic exit. Full install/uninstall should be checked in a
-disposable Windows VM before claiming installer compatibility beyond that tested.
+the GUI with an automatic exit. `Test-Installer.ps1` runs only on a disposable
+GitHub Actions runner, with CMD integration explicitly unchecked, and validates
+install/uninstall plus payload equality. Interactive setup and optional tasks
+should also be checked in a disposable Windows VM before broader claims.
 Never test by overwriting the developer's system calculator.

@@ -54,20 +54,39 @@ Source: "..\scripts\README.md"; DestDir: "{app}\tools"; Flags: ignoreversion
 Name: "{group}\Rustic Calc"; Filename: "{app}\RusticCalc.exe"
 Name: "{autodesktop}\Rustic Calc"; Filename: "{app}\RusticCalc.exe"; Tasks: desktopicon
 
-[Registry]
-Root: HKCU; Subkey: "Software\RusticCalc\Installer"; ValueType: string; ValueName: "CmdAliasSource"; ValueData: "{app}\RusticCalc.exe"; Tasks: cmdalias; Flags: uninsdeletevalue uninsdeletekeyifempty
-
 [Run]
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\tools\Set-CalcCommand.ps1"" Install -CalculatorPath ""{app}\RusticCalc.exe"""; Tasks: cmdalias; Flags: runhidden
 Filename: "{app}\RusticCalc.exe"; Description: "Launch Rustic Calc"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\tools\Set-CalcCommand.ps1"" Uninstall"; Check: OwnsCmdAlias; RunOnceId: "RusticCalcCmdAlias"; Flags: runhidden
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\tools\Set-CalcCommand.ps1"" Uninstall -ExpectedSourcePath ""{app}\RusticCalc.exe"""; Check: OwnsCmdAlias; RunOnceId: "RusticCalcCmdAlias"; Flags: runhidden
 
 [Code]
+procedure CurStepChanged(CurStep: TSetupStep);
+var ResultCode: Integer; Parameters: String;
+begin
+  if (CurStep = ssPostInstall) and WizardIsTaskSelected('cmdalias') then begin
+    Parameters := '-NoLogo -NoProfile -ExecutionPolicy Bypass -File "' +
+      ExpandConstant('{app}\tools\Set-CalcCommand.ps1') + '" Install -CalculatorPath "' +
+      ExpandConstant('{app}\RusticCalc.exe') + '"';
+    if Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Parameters,
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) then
+      RegWriteStringValue(HKCU, 'Software\RusticCalc\Installer', 'CmdAliasSource', ExpandConstant('{app}\RusticCalc.exe'))
+    else
+      MsgBox('Rustic Calc was installed, but CMD integration failed. Run tools\Set-CalcCommand.ps1 manually to inspect the error.', mbError, MB_OK);
+  end;
+end;
+
 function OwnsCmdAlias: Boolean;
 var Source: String;
 begin
   Result := RegQueryStringValue(HKCU, 'Software\RusticCalc\Installer', 'CmdAliasSource', Source) and
     (CompareText(Source, ExpandConstant('{app}\RusticCalc.exe')) = 0);
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if (CurUninstallStep = usPostUninstall) and OwnsCmdAlias then begin
+    RegDeleteValue(HKCU, 'Software\RusticCalc\Installer', 'CmdAliasSource');
+    RegDeleteKeyIfEmpty(HKCU, 'Software\RusticCalc\Installer');
+  end;
 end;

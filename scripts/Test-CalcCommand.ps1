@@ -55,7 +55,12 @@ try {
     $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($profileKey)
     Assert ($key.GetValue('AutoRun', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) -ceq ($original + ' & @echo USER_ADDITION')) 'User addition was lost.'
     $key.Dispose()
-    Write-Host 'PASS: isolated install/update/uninstall, registry backup, CMD resolution, WhatIf and user edits.'
+    Invoke-Setup Install
+    & $script Uninstall -InstallDirectory $install -RegistrySubKey $profileKey -ExpectedSourcePath (Join-Path $root 'another-source.exe')
+    Assert (Test-Path -LiteralPath (Join-Path $install 'calc.cmd')) 'Uninstall detached another source.'
+    & $script Uninstall -InstallDirectory $install -RegistrySubKey $profileKey -ExpectedSourcePath ([IO.Path]::GetFullPath($CalculatorPath))
+    Assert (-not (Test-Path -LiteralPath (Join-Path $install 'calc.cmd'))) 'Owned-source uninstall failed.'
+    Write-Host 'PASS: isolated install/update/uninstall, registry backup, CMD resolution, WhatIf, user edits and source ownership.'
 } finally {
     [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($keyRoot, $false)
 }

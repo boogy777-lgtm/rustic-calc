@@ -5,6 +5,7 @@ param(
     [string] $Action = 'Install',
     [string] $CalculatorPath,
     [string] $InstallDirectory,
+    [string] $ExpectedSourcePath,
     [Parameter(DontShow = $true)]
     [string] $RegistrySubKey = 'Software\Microsoft\Command Processor'
 )
@@ -110,6 +111,13 @@ try {
             Write-Host 'Calc1 command integration is not installed.'
             return
         }
+        if ($ExpectedSourcePath) {
+            $sourceProperty = $state.PSObject.Properties['SourceExecutable']
+            if ($null -eq $sourceProperty -or $sourceProperty.Value -ne [IO.Path]::GetFullPath($ExpectedSourcePath)) {
+                Write-Warning 'CMD integration belongs to another source; leaving it unchanged.'
+                return
+            }
+        }
         if (-not $PSCmdlet.ShouldProcess($InstallDirectory, 'Detach Calc1 CMD hook and remove unchanged installer-owned files')) { return }
         if ($registered) {
             if ($profile.Kind -eq $state.InstalledProfile.Kind -and $profile.Value -ceq $state.InstalledProfile.Value) {
@@ -185,6 +193,7 @@ try {
     foreach ($name in $ownedNames) { $known[$name] = @(@(Get-KnownHashes $state $name) + $newHashes[$name] | Select-Object -Unique) }
     $newState = [ordered]@{
         Owner = $owner; InstallDirectory = $InstallDirectory; RegistrySubKey = $RegistrySubKey
+        SourceExecutable = $CalculatorPath
         PreviousProfile = $previous
         InstalledProfile = [pscustomobject]@{ Exists = $true; Kind = $kind; Value = $installed }
         KnownFileHashes = $known
