@@ -1,0 +1,23 @@
+name: Bug report
+description: Report a reproducible Rustic Calc issue
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version and Windows build
+    validations:
+      required: true
+  - type: input
+    id: display
+    attributes:
+      label: Mode, language, theme and DPI/scale
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps, expected result and actual result
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots/logs (remove private information)

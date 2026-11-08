@@ -1,0 +1,106 @@
+name: Windows CI and release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows x64 / Rust and installer
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: rustup show
+      - name: Format and module constraints
+        env:
+          BUILD_REF: ${{ github.ref }}
+          BUILD_TAG: ${{ github.ref_name }}
+        run: |
+          cargo fmt --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tools/check_project.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:BUILD_REF.StartsWith('refs/tags/')) {
+            python tools/check_project.py --tag $env:BUILD_TAG
+          }
+      - name: Regression tests
+        run: cargo test --locked
+      - name: Portable build
+        run: cargo build --release --locked
+      - name: Isolated CMD integration tests
+        shell: powershell
+        run: ./scripts/Test-CalcCommand.ps1
+      - name: Render all modes
+        shell: powershell
+        run: ./scripts/Smoke-Test.ps1 -BinaryPath target/x86_64-pc-windows-msvc/release/calc1.exe
+      - name: Installer compiler
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (-not (Test-Path -LiteralPath $compiler)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          if (-not (Test-Path -LiteralPath $compiler)) { throw 'Inno Setup compiler is unavailable.' }
+          (Get-Item -LiteralPath $compiler).VersionInfo | Format-List ProductVersion
+      - name: Build installer and checksums
+        shell: powershell
+        run: ./scripts/Build-Release.ps1
+      - name: Release files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-x64-release
+          path: |
+            dist/RusticCalc.exe
+            dist/RusticCalc-Setup.exe
+            dist/SHA256SUMS.txt
+            dist/RELEASE_NOTES.md
+          if-no-files-found: error
+      - name: UI evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-ui-evidence
+          path: artifacts/screenshots/
+          if-no-files-found: warn
+          retention-days: 14
+
+  release:
+    name: Publish immutable GitHub release
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: windows-x64-release
+          path: dist
+      - name: Publish portable EXE and installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum --check SHA256SUMS.txt
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo 'A release already exists. Refusing to overwrite immutable assets.' >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" \
+            RusticCalc.exe RusticCalc-Setup.exe SHA256SUMS.txt \
+            --verify-tag --title "Rustic Calc $RELEASE_TAG" \
+            --notes-file RELEASE_NOTES.md --latest

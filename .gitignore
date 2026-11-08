@@ -1,0 +1,20 @@
+/target/
+/dist/
+/artifacts/
+/shots/
+/checks/
+/.private/
+*.log
+*.error
+*.tmp
+*.pdb
+*.ilk
+__pycache__/
+*.pyc
+# Local reconstruction/audit ledgers are not the public project documentation.
+/mechanics.json
+/MECHANICS.md
+/REFACTOR_STATE.md
+/POPUP_AUDIT.md
+/UI_UX_AUDIT*.md
+/*_2026-11-*.md
