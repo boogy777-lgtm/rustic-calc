@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::UI::Controls::{
-    GetComboBoxInfo, COMBOBOXINFO, HOVER_DEFAULT, WM_MOUSELEAVE,
+    GetComboBoxInfo, COMBOBOXINFO, EM_SETSEL, HOVER_DEFAULT, WM_MOUSELEAVE,
 };
 use windows_sys::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
@@ -383,6 +383,14 @@ unsafe extern "system" fn edit_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM
     }
     if msg == WM_NCPAINT {
         repaint_frame(hwnd);
+        return 0;
+    }
+    // Standard EDIT has no default Ctrl+A binding. Keep selection native;
+    // do not read or modify the clipboard here (also works for read-only text).
+    if msg == WM_KEYDOWN && wp as u16 == VK_A && unsafe { GetKeyState(VK_CONTROL as i32) } < 0 {
+        unsafe {
+            SendMessageW(hwnd, EM_SETSEL, 0, -1);
+        }
         return 0;
     }
     let changed = state_message(hwnd, msg);

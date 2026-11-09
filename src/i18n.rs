@@ -1,5 +1,7 @@
 //! Interface strings and display-name translations.
 
+pub mod coordinates;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Lang {
     Ru,
@@ -49,6 +51,7 @@ pub struct Text {
     pub menu_statistics: &'static str,
     pub menu_unit: &'static str,
     pub menu_date: &'static str,
+    pub menu_coordinates: &'static str,
     pub menu_worksheets: &'static str,
     pub menu_mortgage: &'static str,
     pub menu_lease: &'static str,
@@ -138,6 +141,7 @@ pub static RU: Text = Text {
     menu_statistics: "Статистика",
     menu_unit: "Преобразование единиц",
     menu_date: "Вычисление даты",
+    menu_coordinates: "WGS84 → МСК",
     menu_worksheets: "Рабочие таблицы",
     menu_mortgage: "Ипотека",
     menu_lease: "Аренда автомобиля",
@@ -150,9 +154,9 @@ pub static RU: Text = Text {
     menu_help_item: "Справка",
     menu_about: "О программе",
     help_title: "Справка калькулятора",
-    help_text: "Калькулятор\n\nЦифры и операторы; Enter или = — вычисление, Backspace — удаление, Esc — очистка.\nCtrl+1..4: обычный, инженерный, программист, статистика.\nCtrl+5/6: единицы и даты; Ctrl+7/8: ипотека и аренда; Ctrl+9/0: расход топлива.\nCtrl+U и Ctrl+E — альтернативные сочетания для единиц и дат. В формах Tab перемещает фокус; в датах и таблицах Enter запускает вычисление.",
+    help_text: "Калькулятор\n\nЦифры и операторы; Enter или = — вычисление, Backspace — удаление, Esc — очистка.\nCtrl+1..4: обычный, инженерный, программист, статистика.\nCtrl+5/6: единицы и даты; Ctrl+7/8: ипотека и аренда; Ctrl+9/0: расход топлива.\nCtrl+U и Ctrl+E — альтернативные сочетания для единиц и дат.\nCtrl+G: WGS84 → МСК; F2 в этом режиме: параметры, ограничения, источники и лицензия.\nВ формах Tab перемещает фокус; в датах, таблицах и координатах Enter запускает вычисление.",
     about_title: "О Rustic Calc",
-    about_text: concat!("Rustic Calc ", env!("CARGO_PKG_VERSION"), "\n\nНативный калькулятор для Windows на Rust и Win32/GDI.\n10 режимов, RU/EN, темы и масштабирование DPI.\n\nЛицензия ", env!("CARGO_PKG_LICENSE"), "\n", env!("CARGO_PKG_REPOSITORY"), "\n\nLinux/macOS пока не поддерживаются. PR приветствуются."),
+    about_text: concat!("Rustic Calc ", env!("CARGO_PKG_VERSION"), "\n\nНативный калькулятор для Windows на Rust и Win32/GDI.\n11 режимов, RU/EN, темы и масштабирование DPI.\n\nЛицензия приложения ", env!("CARGO_PKG_LICENSE"), "\nКаталог МСК geo-ts/msk: Apache-2.0 (Ctrl+G, F2).\n", env!("CARGO_PKG_REPOSITORY"), "\n\nLinux/macOS пока не поддерживаются. PR приветствуются."),
     lang_russian: "Русский",
     lang_english: "English",
     theme_system: "Системная",
@@ -227,6 +231,7 @@ pub static EN: Text = Text {
     menu_statistics: "Statistics",
     menu_unit: "Unit conversion",
     menu_date: "Date calculation",
+    menu_coordinates: "WGS84 → MSK",
     menu_worksheets: "Worksheets",
     menu_mortgage: "Mortgage",
     menu_lease: "Vehicle lease",
@@ -239,9 +244,9 @@ pub static EN: Text = Text {
     menu_help_item: "View Help",
     menu_about: "About Calculator",
     help_title: "Calculator Help",
-    help_text: "Calculator\n\nDigits and operators; Enter or = evaluates, Backspace deletes, Esc clears.\nCtrl+1..4: standard, scientific, programmer, statistics.\nCtrl+5/6: units and dates; Ctrl+7/8: mortgage and lease; Ctrl+9/0: fuel economy.\nCtrl+U and Ctrl+E also open units and dates. Tab moves focus; Enter calculates in dates and worksheets.",
+    help_text: "Calculator\n\nDigits and operators; Enter or = evaluates, Backspace deletes, Esc clears.\nCtrl+1..4: standard, scientific, programmer, statistics.\nCtrl+5/6: units and dates; Ctrl+7/8: mortgage and lease; Ctrl+9/0: fuel economy.\nCtrl+U and Ctrl+E also open units and dates.\nCtrl+G: WGS84 → MSK; F2 in that mode shows parameters, limits, sources and license.\nTab moves focus; Enter calculates in dates, worksheets and coordinates.",
     about_title: "About Rustic Calc",
-    about_text: concat!("Rustic Calc ", env!("CARGO_PKG_VERSION"), "\n\nA native Windows calculator built with Rust and Win32/GDI.\n10 modes, RU/EN, themes and per-monitor DPI.\n\nLicense: ", env!("CARGO_PKG_LICENSE"), "\n", env!("CARGO_PKG_REPOSITORY"), "\n\nLinux/macOS are not supported yet. PRs welcome."),
+    about_text: concat!("Rustic Calc ", env!("CARGO_PKG_VERSION"), "\n\nA native Windows calculator built with Rust and Win32/GDI.\n11 modes, RU/EN, themes and per-monitor DPI.\n\nApplication license: ", env!("CARGO_PKG_LICENSE"), "\nMSK catalogue geo-ts/msk: Apache-2.0 (Ctrl+G, F2).\n", env!("CARGO_PKG_REPOSITORY"), "\n\nLinux/macOS are not supported yet. PRs welcome."),
     lang_russian: "Russian",
     lang_english: "English",
     theme_system: "System",

@@ -43,6 +43,8 @@ jobs:
       - name: Render all modes
         shell: powershell
         run: ./scripts/Smoke-Test.ps1 -BinaryPath target/x86_64-pc-windows-msvc/release/calc1.exe
+      - name: Coordinate native control smoke test
+        run: python tools/smoke_coordinates.py target/x86_64-pc-windows-msvc/release/calc1.exe
       - name: Installer compiler
         run: |
           $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'

@@ -1,4 +1,5 @@
 mod common;
+mod coordinates;
 mod date;
 mod programmer;
 mod scientific;
@@ -90,6 +91,14 @@ impl Shared {
         hwnd
     }
 
+    pub fn text_area(&self, id: u16, rect: Rect, text: &str, read_only: bool) -> HWND {
+        let hwnd = platform::create_text_area(self.hwnd, id, rect, text, read_only);
+        platform::set_font(hwnd, self.hfont);
+        platform::theme_control(hwnd, self.dark);
+        platform::install_edit_paint(hwnd);
+        hwnd
+    }
+
     pub fn sidebar_action(&mut self, action: Action, current: f64) -> bool {
         match action {
             Action::Mem(MemAction::Clear) => self.memory = 0.0,
@@ -168,6 +177,7 @@ fn index(mode: Mode) -> usize {
         Mode::Worksheet(WorksheetKind::VehicleLease) => 7,
         Mode::Worksheet(WorksheetKind::FuelMpg) => 8,
         Mode::Worksheet(WorksheetKind::FuelL100) => 9,
+        Mode::Coordinates => 10,
     }
 }
 
@@ -180,6 +190,7 @@ fn create(mode: Mode) -> Box<dyn View> {
         Mode::UnitConversion => Box::new(unit::UnitView::new()),
         Mode::DateCalculation => Box::new(date::DateView::new()),
         Mode::Worksheet(kind) => Box::new(worksheet::WorksheetView::new(kind)),
+        Mode::Coordinates => Box::new(coordinates::CoordinateView::new()),
     }
 }
 
@@ -191,7 +202,7 @@ pub struct ViewManager {
 impl ViewManager {
     pub fn new() -> Self {
         Self {
-            slots: (0..10).map(|_| None).collect(),
+            slots: (0..11).map(|_| None).collect(),
             active: None,
         }
     }
@@ -265,6 +276,7 @@ pub fn mode_client_size(mode: Mode, menu_height: i32) -> (i32, i32) {
             metrics::MARGIN * 2.0 + metrics::SIDEBAR_W,
             metrics::FORM_CONTENT_H,
         ),
+        Mode::Coordinates => (metrics::COORDINATE_CONTENT_W, metrics::COORDINATE_CONTENT_H),
         Mode::UnitConversion | Mode::DateCalculation | Mode::Worksheet(_) => (
             metrics::MARGIN * 3.0
                 + metrics::SIDEBAR_W
@@ -275,4 +287,34 @@ pub fn mode_client_size(mode: Mode, menu_height: i32) -> (i32, i32) {
     };
     // Reserve content independently from the font-measured menu bar.
     (width as i32, height as i32 + menu_height)
+}
+
+#[cfg(test)]
+mod registration_tests {
+    use super::*;
+
+    #[test]
+    fn eleven_modes_have_distinct_slots_and_factories_without_replacing_legacy_slots() {
+        let manager = ViewManager::new();
+        let modes = [
+            Mode::Standard,
+            Mode::Scientific,
+            Mode::Programmer,
+            Mode::Statistics,
+            Mode::UnitConversion,
+            Mode::DateCalculation,
+            Mode::Worksheet(WorksheetKind::Mortgage),
+            Mode::Worksheet(WorksheetKind::VehicleLease),
+            Mode::Worksheet(WorksheetKind::FuelMpg),
+            Mode::Worksheet(WorksheetKind::FuelL100),
+            Mode::Coordinates,
+        ];
+        assert_eq!(manager.slots.len(), modes.len());
+        for (slot, mode) in modes.into_iter().enumerate() {
+            assert_eq!(index(mode), slot);
+            assert_eq!(create(mode).mode(), mode);
+            let (width, height) = mode_client_size(mode, 30);
+            assert!(width > 0 && height > 30);
+        }
+    }
 }

@@ -1,7 +1,7 @@
 # Architecture and dependency direction
 
 ```text
-main -> app -> views -> engine / units
+main -> app -> views -> engine / units / coordinates
              |        ui -> platform-safe resources
              +------> platform (Win32 boundary)
 ```
@@ -12,10 +12,17 @@ This is a source-level application architecture, not a stable binary plugin ABI.
 | --- | --- | --- |
 | engine | Arithmetic, scientific/programmer/statistics state | HWNDs, I/O, theme, localization policy |
 | units | Unit/date/worksheet calculations and typed IDs | Control layout or message handling |
+| coordinates | Strict CRS parsing, WGS84/ECEF/datum/TM math, embedded template data | HWNDs, I/O, network, localization policy |
 | ui | Canvas, reusable widgets, DPI, metrics, palette | Financial formulas or mode dispatch |
 | platform | Native resources, controls, menus, clipboard, screenshots | Domain formulas or view-specific values |
 | views | Local view model, field synchronization, actions and layout | New unsafe FFI or registry/network integration |
 | app | Active mode, theme/locale, global commands and lifecycle | A second copy of the math engine |
+
+The eleventh view is `views/coordinates.rs`; numerical code is isolated in
+`coordinates/`. The Apache-2.0 catalogue is embedded with its full license, not
+downloaded. Visible text/region names are in `i18n/coordinates.rs`. Drafts are
+per-template/per-region session state, not filesystem persistence. See
+[coordinate contract and provenance](COORDINATES.md).
 
 The existing `units::today()` uses one `platform::local_date()` bridge. Do not
 extend this exception; a portability PR should inject the clock or move the bridge.

@@ -231,6 +231,13 @@ impl App {
                         true,
                     ),
                     platform::MenuItem::submenu(t.menu_worksheets, worksheets),
+                    platform::MenuItem::item(
+                        t.menu_coordinates,
+                        "Ctrl+G",
+                        platform::MODE_COORDINATES,
+                        active == platform::MODE_COORDINATES,
+                        true,
+                    ),
                     platform::MenuItem::separator(),
                     platform::MenuItem::item(
                         t.menu_history,
@@ -460,6 +467,7 @@ impl App {
             platform::MODE_LEASE => Some(Mode::Worksheet(WorksheetKind::VehicleLease)),
             platform::MODE_MPG => Some(Mode::Worksheet(WorksheetKind::FuelMpg)),
             platform::MODE_L100 => Some(Mode::Worksheet(WorksheetKind::FuelL100)),
+            platform::MODE_COORDINATES => Some(Mode::Coordinates),
             _ => None,
         };
         if let Some(mode) = mode {
@@ -694,6 +702,7 @@ fn mode_command(mode: Mode) -> u16 {
         Mode::Worksheet(WorksheetKind::VehicleLease) => platform::MODE_LEASE,
         Mode::Worksheet(WorksheetKind::FuelMpg) => platform::MODE_MPG,
         Mode::Worksheet(WorksheetKind::FuelL100) => platform::MODE_L100,
+        Mode::Coordinates => platform::MODE_COORDINATES,
     }
 }
 
@@ -850,7 +859,10 @@ impl WindowHandler for App {
         }
         if !ctrl
             && vk == VK_RETURN
-            && matches!(self.mode, Mode::DateCalculation | Mode::Worksheet(_))
+            && matches!(
+                self.mode,
+                Mode::DateCalculation | Mode::Worksheet(_) | Mode::Coordinates
+            )
         {
             if let Some(view) = self.manager.active_mut() {
                 view.action(Action::Calculate, &mut self.shared);
@@ -906,6 +918,10 @@ impl WindowHandler for App {
                 }
                 VK_E => {
                     self.switch_mode(Mode::DateCalculation);
+                    return true;
+                }
+                VK_G => {
+                    self.switch_mode(Mode::Coordinates);
                     return true;
                 }
                 VK_C => {

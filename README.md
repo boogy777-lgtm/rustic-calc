@@ -43,8 +43,12 @@ engine independent, and discuss any dependency changes before implementation.
 - DCS loop-resistor helper with E24 suggestion and power estimate.
 - System, light and dark themes; shared selection/focus styling.
 - Per-monitor DPI scaling, keyboard shortcuts and screenshot CLI.
+- Offline WGS84 → MSK: region/zone templates, editable PROJ parameters and
+  custom definitions. 262 community templates cover 79 regions; other regional
+  groups allow manual definitions. [Usage, sources and accuracy limits](docs/COORDINATES.md).
 
 `Ctrl+1`…`Ctrl+0` select the ten modes; `Ctrl+U`/`Ctrl+E` are aliases for units/dates.
+`Ctrl+G` opens the eleventh mode, WGS84 → MSK; F2 shows its help/source/license.
 Forms support Tab and Enter. Native inputs retain normal editing/clipboard behavior.
 
 ```bat
@@ -53,7 +57,8 @@ RusticCalc.exe --mode programmer --screenshot programmer.png
 ```
 
 Modes: `standard`, `scientific`, `programmer`, `statistics`, `unit`, `date`,
-`mortgage`, `lease`, `mpg`, `l100`. Languages: `ru` (default), `en`.
+`mortgage`, `lease`, `mpg`, `l100`, `coordinates` (`wgs84`/`msk` aliases).
+Languages: `ru` (default), `en`.
 Themes: `system` (default), `white`, `dark`.
 
 ## Build and test
@@ -74,6 +79,11 @@ binary to `RusticCalc.exe`; this is not a second application.
 
 Only runtime dependency: **`windows-sys 0.59`**. Release builds use a portable
 x86-64 baseline, not `target-cpu=native`.
+
+The application is MIT; the embedded MSK catalogue retains Apache-2.0
+([notices](NOTICE.md)). Community templates are not certified survey parameters.
+Verify official parameters/control points for cadastral work. Coordinate drafts
+are kept only for the current session; results use X=Northing, Y=Easting.
 
 ## CMD integration
 

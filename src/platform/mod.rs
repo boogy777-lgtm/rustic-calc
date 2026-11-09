@@ -19,7 +19,8 @@ use windows_sys::Win32::System::Memory::*;
 use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
 use windows_sys::Win32::System::SystemInformation::GetLocalTime;
 use windows_sys::Win32::UI::Controls::{
-    GetComboBoxInfo, SetWindowTheme, COMBOBOXINFO, DRAWITEMSTRUCT, MEASUREITEMSTRUCT, ODT_COMBOBOX,
+    GetComboBoxInfo, SetWindowTheme, COMBOBOXINFO, DRAWITEMSTRUCT, EM_SETLIMITTEXT, EM_SETREADONLY,
+    MEASUREITEMSTRUCT, ODT_COMBOBOX,
 };
 use windows_sys::Win32::UI::HiDpi::*;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
@@ -31,6 +32,7 @@ pub const MODE_PROGRAMMER: u16 = 1003;
 pub const MODE_STATISTICS: u16 = 1004;
 pub const MODE_UNIT: u16 = 1005;
 pub const MODE_DATE: u16 = 1006;
+pub const MODE_COORDINATES: u16 = 1007;
 pub const MODE_MORTGAGE: u16 = 1010;
 pub const MODE_LEASE: u16 = 1011;
 pub const MODE_MPG: u16 = 1012;
@@ -269,6 +271,11 @@ pub fn theme_control(hwnd: HWND, dark: bool) {
 /// so the selected cell is overpainted after the control's own WM_PAINT.
 unsafe fn paint_edit_selection(hwnd: HWND) {
     unsafe {
+        // The overlay below is single-line geometry. Multiline text areas keep
+        // the native selection renderer (including wrapped lines/scrolling).
+        if GetWindowLongPtrW(hwnd, GWL_STYLE) as u32 & ES_MULTILINE as u32 != 0 {
+            return;
+        }
         let mut start: u32 = 0;
         let mut end: u32 = 0;
         SendMessageW(
@@ -508,6 +515,71 @@ pub fn create_edit(parent: HWND, id: u16, x: i32, y: i32, w: i32, h: i32, text: 
             hinst,
             std::ptr::null(),
         )
+    }
+}
+
+/// A native, wrapping EDIT with a native vertical scrollbar. The parent owns
+/// the HWND; no allocated callback state is attached by this helper.
+pub fn create_text_area(
+    parent: HWND,
+    id: u16,
+    rect: crate::ui::Rect,
+    text: &str,
+    read_only: bool,
+) -> HWND {
+    let text = wide(text);
+    let style = WS_CHILD
+        | WS_VISIBLE
+        | WS_TABSTOP
+        | WS_BORDER
+        | WS_VSCROLL
+        | ES_MULTILINE as u32
+        | ES_AUTOVSCROLL as u32
+        | if read_only { ES_READONLY as u32 } else { 0 };
+    let hwnd = unsafe {
+        CreateWindowExW(
+            0,
+            windows_sys::w!("EDIT"),
+            text.as_ptr(),
+            style,
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            parent,
+            id as usize as HMENU,
+            GetModuleHandleW(std::ptr::null()),
+            std::ptr::null(),
+        )
+    };
+    unsafe {
+        SendMessageW(hwnd, EM_SETLIMITTEXT, 16_384, 0);
+    }
+    hwnd
+}
+
+std::thread_local! {
+    // Programmatic view→control writes already have synchronized model state.
+    // Do not re-enter the mutably borrowed App via synchronous EDIT notices.
+    static SETTING_CONTROL_TEXT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub fn set_text(hwnd: HWND, text: &str) {
+    if !hwnd.is_null() {
+        let text = wide(text);
+        SETTING_CONTROL_TEXT.with(|setting| {
+            let previous = setting.replace(true);
+            unsafe {
+                SetWindowTextW(hwnd, text.as_ptr());
+            }
+            setting.set(previous);
+        });
+    }
+}
+
+pub fn set_read_only(hwnd: HWND, read_only: bool) {
+    unsafe {
+        SendMessageW(hwnd, EM_SETREADONLY, usize::from(read_only), 0);
     }
 }
 
@@ -796,6 +868,12 @@ pub fn capture_window_png(hwnd: HWND, path: &str) -> Result<(), String> {
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    if msg == WM_COMMAND
+        && matches!(((wparam >> 16) & 0xffff) as u32, EN_CHANGE | EN_UPDATE)
+        && SETTING_CONTROL_TEXT.with(std::cell::Cell::get)
+    {
+        return 0;
+    }
     // Default-only messages (notably activation sent during popup creation and
     // destruction) must not form a second mutable borrow of the App handler.
     if !matches!(
@@ -1110,9 +1188,18 @@ pub fn run(
                     SendMessageW(hwnd, WM_KEYDOWN, VK_F10 as usize, 0);
                     continue;
                 }
+                let id = GetDlgCtrlID(msg.hwnd);
+                if ((500..=508).contains(&id) && msg.wParam as u16 == VK_F2)
+                    || (id == 508 && msg.wParam as u16 == VK_ESCAPE)
+                {
+                    SendMessageW(hwnd, WM_KEYDOWN, msg.wParam, 0);
+                    continue;
+                }
                 if msg.wParam as u16 == VK_RETURN {
-                    let id = GetDlgCtrlID(msg.hwnd);
-                    if (300..=306).contains(&id) || (399..=405).contains(&id) {
+                    if (300..=306).contains(&id)
+                        || (399..=405).contains(&id)
+                        || (502..=507).contains(&id)
+                    {
                         SendMessageW(hwnd, WM_KEYDOWN, VK_RETURN as usize, 0);
                         continue;
                     }
@@ -1127,9 +1214,9 @@ pub fn run(
     }
 }
 
-/// Ctrl+1…Ctrl+0 view switching plus the legacy Ctrl+U/Ctrl+E aliases.
+/// Ctrl+1…Ctrl+0, legacy Ctrl+U/Ctrl+E aliases, and Ctrl+G coordinates.
 /// Kept as data so the mapping can be regression-tested without a message loop.
-pub(crate) const MODE_ACCELERATORS: [(u16, u16); 12] = [
+pub(crate) const MODE_ACCELERATORS: [(u16, u16); 13] = [
     (VK_1, MODE_STANDARD),
     (VK_2, MODE_SCIENTIFIC),
     (VK_3, MODE_PROGRAMMER),
@@ -1142,6 +1229,7 @@ pub(crate) const MODE_ACCELERATORS: [(u16, u16); 12] = [
     (VK_0, MODE_L100),
     (VK_U, MODE_UNIT),
     (VK_E, MODE_DATE),
+    (VK_G, MODE_COORDINATES),
 ];
 
 fn mode_accelerators() -> HACCEL {

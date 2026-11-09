@@ -3,6 +3,7 @@
 
 mod actions;
 mod app;
+mod coordinates;
 mod engine;
 mod i18n;
 mod platform;
@@ -30,6 +31,7 @@ fn parse_mode(text: &str) -> Mode {
         "lease" | "vehicle" => Mode::Worksheet(WorksheetKind::VehicleLease),
         "mpg" | "fuel" => Mode::Worksheet(WorksheetKind::FuelMpg),
         "l100" | "fuell" => Mode::Worksheet(WorksheetKind::FuelL100),
+        "coordinates" | "wgs84" | "msk" => Mode::Coordinates,
         _ => Mode::Standard,
     }
 }

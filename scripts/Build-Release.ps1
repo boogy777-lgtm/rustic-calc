@@ -31,6 +31,6 @@ $lines = foreach ($name in @('RusticCalc.exe', 'RusticCalc-Setup.exe')) {
     $hash + '  ' + $name
 }
 [IO.File]::WriteAllLines((Join-Path $OutputDirectory 'SHA256SUMS.txt'), $lines, (New-Object Text.UTF8Encoding($false)))
-$notes = "Rustic Calc $version for Windows 10/11 x64.`n`nPortable: RusticCalc.exe. Installer: RusticCalc-Setup.exe (per-user, no administrator required).`n`nMIT licensed. Binaries are currently unsigned; verify SHA256SUMS.txt and the download origin.`n`nLinux/macOS and native x86/ARM64 builds are not supported yet; PRs welcome.`n"
+$notes = "Rustic Calc $version for Windows 10/11 x64.`n`nPortable: RusticCalc.exe. Installer: RusticCalc-Setup.exe (per-user, no administrator required).`n`nNew in this release: WGS84 -> MSK (Ctrl+G) with 262 community PROJ templates covering 79 regions, editable parameters, custom definitions, strict offline conversion and selectable X/Y results. Coordinate drafts last only for the current session. The bundled catalogue is Apache-2.0 and is not certified survey data; verify official parameters and independent control points for cadastral or legal work.`n`nThe application is MIT licensed. Binaries are currently unsigned; verify SHA256SUMS.txt and the download origin.`n`nLinux/macOS and native x86/ARM64 builds are not supported yet; PRs welcome.`n"
 [IO.File]::WriteAllText((Join-Path $OutputDirectory 'RELEASE_NOTES.md'), $notes, (New-Object Text.UTF8Encoding($false)))
 Write-Host "Release $version prepared: $OutputDirectory"

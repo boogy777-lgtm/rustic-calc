@@ -46,6 +46,28 @@ mod tests {
         assert!(has(VK_0, platform::MODE_L100));
         assert!(has(VK_U, platform::MODE_UNIT));
         assert!(has(VK_E, platform::MODE_DATE));
+        assert!(has(VK_G, platform::MODE_COORDINATES));
+    }
+
+    #[test]
+    fn coordinate_cli_aliases_preserve_existing_mode_names() {
+        for alias in ["coordinates", "wgs84", "msk", "MSK"] {
+            assert_eq!(crate::parse_mode(alias), Mode::Coordinates);
+        }
+        for (name, mode) in [
+            ("standard", Mode::Standard),
+            ("scientific", Mode::Scientific),
+            ("programmer", Mode::Programmer),
+            ("statistics", Mode::Statistics),
+            ("unit", Mode::UnitConversion),
+            ("date", Mode::DateCalculation),
+            ("mortgage", Mode::Worksheet(WorksheetKind::Mortgage)),
+            ("lease", Mode::Worksheet(WorksheetKind::VehicleLease)),
+            ("mpg", Mode::Worksheet(WorksheetKind::FuelMpg)),
+            ("l100", Mode::Worksheet(WorksheetKind::FuelL100)),
+        ] {
+            assert_eq!(crate::parse_mode(name), mode);
+        }
     }
 
     fn press(e: &mut StandardEngine, text: &str) {

@@ -20,6 +20,7 @@ pub enum Mode {
     UnitConversion,
     DateCalculation,
     Worksheet(WorksheetKind),
+    Coordinates,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

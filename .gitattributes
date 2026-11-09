@@ -4,6 +4,9 @@
 *.md text eol=lf
 *.yml text eol=lf
 *.py text eol=lf
+*.cjs text eol=lf
+*.tsv text eol=lf
+third_party/*.txt text eol=lf
 *.ps1 text eol=crlf
 *.cmd text eol=crlf
 *.iss text eol=crlf

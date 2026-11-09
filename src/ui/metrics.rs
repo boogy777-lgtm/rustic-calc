@@ -107,3 +107,36 @@ pub const COMBO_ARROW_MIN_W: f32 = 12.0;
 pub const COMBO_ARROW_MIN_HALF: f32 = 3.0;
 pub const COMBO_ARROW_MIN_H: f32 = 2.0;
 pub const SCROLL_THUMB_PAD: f32 = 3.0;
+
+// Coordinate form (no calculator sidebar) ------------------------------------
+pub const COORDINATE_CONTENT_W: f32 = 900.0;
+pub const COORDINATE_EDITOR_H: f32 = 100.0;
+pub const COORDINATE_TOOL_W: f32 = 190.0;
+pub const COORDINATE_CONTENT_H: f32 = MARGIN * 2.0
+    + FORM_TITLE_H
+    + GAP_SECTION
+    + FIELD_LABEL_H
+    + GAP_HAIRLINE
+    + FIELD_H
+    + GAP_SECTION
+    + FIELD_H
+    + GAP_HAIRLINE
+    + COORDINATE_EDITOR_H
+    + GAP_HAIRLINE
+    + FIELD_LABEL_H
+    + GAP_SECTION
+    + FIELD_LABEL_H
+    + GAP_HAIRLINE
+    + FIELD_H
+    + GAP_SECTION
+    + FORM_ACTION_H
+    + GAP_TIGHT
+    + FIELD_LABEL_H
+    + GAP_SECTION
+    + FIELD_LABEL_H
+    + GAP_HAIRLINE
+    + FIELD_H
+    + GAP_SECTION
+    + FIELD_LABEL_H * 2.0
+    + GAP_HAIRLINE
+    + FIELD_H;

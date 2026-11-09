@@ -34,6 +34,13 @@ def main():
     engine = (ROOT / 'src/engine.rs').read_text(encoding='utf-8')
     if re.search(r'windows_sys|crate::platform|std::fs|std::process', engine):
         errors.append('Numerical engine must not depend on Win32/platform/I/O.')
+    for path in (ROOT / 'src/coordinates').glob('*.rs'):
+        if re.search(r'windows_sys|crate::platform|std::fs|std::process|std::net', path.read_text(encoding='utf-8')):
+            errors.append(f'Coordinate core must remain pure: {path.name}')
+    for name in ['data/msk_templates.tsv', 'data/msk_reference.tsv', 'data/custom_coordinate_reference.tsv',
+                 'third_party/geo-ts-msk-LICENSE.txt', 'docs/COORDINATES.md']:
+        if not (ROOT / name).is_file():
+            errors.append(f'Missing coordinate data/provenance: {name}')
     for path in (ROOT / 'src/views').glob('*.rs'):
         production = path.read_text(encoding='utf-8').split('#[cfg(test)]')[0]
         if re.search(r'\bunsafe\s*(?:\{|fn\b)', production):

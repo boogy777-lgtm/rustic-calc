@@ -14,13 +14,14 @@ Internal Rust interfaces may change between versions; do not promise ABI stabili
 3. Add a `View` implementation in `src/views/`. Implement `mode`, `paint`, `action`
    and necessary `command`, `on_enter`, `on_exit`, `on_resize` methods.
 4. Register the mode explicitly: `Mode`, CLI parser, command IDs/menu, view factory,
-   manager index/capacity and preferred content size. Existing ten-mode slots and
-   shortcuts are not automatically extensible. Do not overwrite an existing slot
-   or hotkey. For an eleventh mode, replace/update that registration coherently.
+   manager index/capacity and preferred content size. Existing eleven-mode slots
+   and shortcuts are not automatically extensible. Preserve the original ten
+   number shortcuts and Ctrl+G for coordinates; do not overwrite an existing
+   slot/hotkey. Extend registration and smoke tests coherently for another mode.
 5. Use `Shared::edit`/`combo`, shared widgets and `Action`; do not invent native
    control subclasses or embed raw HWND calls in the view. New reusable behavior
    belongs in `platform`/`ui` and needs its own lifecycle tests.
-6. Add RU/EN labels/errors/help in `i18n.rs`. Add stable IDs for business entities;
+6. Add RU/EN labels/errors/help in `i18n.rs` or its domain submodules. Add stable IDs for business entities;
    never compare display labels to select functionality.
 7. Sync native input on EN_CHANGE, invalidate only relevant result areas when
    practical, and retain uncalculated edits through mode/theme/DPI changes.

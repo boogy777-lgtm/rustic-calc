@@ -83,6 +83,8 @@ pub enum Action {
     StatsCalc(StatsFunc),
     SetAngle(AngleMode),
     Calculate,
+    CoordinateInfo,
+    CoordinateReset,
     None,
 }
 

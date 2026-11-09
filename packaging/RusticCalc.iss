@@ -46,6 +46,8 @@ Name: "cmdalias"; Description: "Use calc in CMD (current user, reversible)"; Fla
 [Files]
 Source: "{#AppSourceExe}"; DestDir: "{app}"; DestName: "RusticCalc.exe"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
+Source: "..\NOTICE.md"; DestDir: "{app}"; DestName: "NOTICE.txt"; Flags: ignoreversion
+Source: "..\third_party\geo-ts-msk-LICENSE.txt"; DestDir: "{app}\licenses"; DestName: "geo-ts-msk-LICENSE.txt"; Flags: ignoreversion
 Source: "..\scripts\Set-CalcCommand.ps1"; DestDir: "{app}\tools"; Flags: ignoreversion
 Source: "..\scripts\setup-calc.cmd"; DestDir: "{app}\tools"; Flags: ignoreversion
 Source: "..\scripts\README.md"; DestDir: "{app}\tools"; Flags: ignoreversion
