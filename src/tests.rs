@@ -29,11 +29,8 @@ mod tests {
 
     #[test]
     fn mode_accelerators_cover_every_view() {
-        let has = |key: u16, cmd: u16| {
-            platform::MODE_ACCELERATORS
-                .iter()
-                .any(|&(k, c)| k == key && c == cmd)
-        };
+        let pairs = platform::mode_accelerator_pairs();
+        let has = |key: u16, cmd: u16| pairs.contains(&(key, cmd));
         assert!(has(VK_1, platform::MODE_STANDARD));
         assert!(has(VK_2, platform::MODE_SCIENTIFIC));
         assert!(has(VK_3, platform::MODE_PROGRAMMER));
@@ -52,7 +49,10 @@ mod tests {
     #[test]
     fn coordinate_cli_aliases_preserve_existing_mode_names() {
         for alias in ["coordinates", "wgs84", "msk", "MSK"] {
-            assert_eq!(crate::parse_mode(alias), Mode::Coordinates);
+            assert_eq!(
+                rustic_calc_app::startup::parse_mode(alias),
+                Mode::Coordinates
+            );
         }
         for (name, mode) in [
             ("standard", Mode::Standard),
@@ -66,7 +66,7 @@ mod tests {
             ("mpg", Mode::Worksheet(WorksheetKind::FuelMpg)),
             ("l100", Mode::Worksheet(WorksheetKind::FuelL100)),
         ] {
-            assert_eq!(crate::parse_mode(name), mode);
+            assert_eq!(rustic_calc_app::startup::parse_mode(name), mode);
         }
     }
 
@@ -782,7 +782,7 @@ mod tests {
     #[test]
     fn localization_switches_russian_and_english() {
         use crate::i18n::{category, date_parts, unit, Lang};
-        use crate::ui::palette::{ThemeMode, DARK, LIGHT};
+        use crate::ui::palette::{resolve, ThemeMode, DARK, LIGHT};
 
         assert_eq!(Lang::default(), Lang::Ru);
         assert_eq!(date_parts(Lang::Ru, 1, 1, 0, 1), "1 год, 1 месяц, 1 день");
@@ -795,7 +795,7 @@ mod tests {
         assert_eq!(unit(Lang::Ru, "Current (4-20 mA)"), "Ток (4–20 мА)");
         assert_eq!(Lang::Ru.text().dcs_loop_title, "Подбор сопротивления");
         assert_eq!(Lang::En.text().dcs_loop_title, "Loop resistor");
-        assert_eq!(ThemeMode::System.resolve(false).bg_top, LIGHT.bg_top);
-        assert_eq!(ThemeMode::System.resolve(true).bg_top, DARK.bg_top);
+        assert_eq!(resolve(ThemeMode::System, false).bg_top, LIGHT.bg_top);
+        assert_eq!(resolve(ThemeMode::System, true).bg_top, DARK.bg_top);
     }
 }

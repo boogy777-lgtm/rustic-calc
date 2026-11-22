@@ -11,12 +11,29 @@ mod worksheet;
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::Graphics::Gdi::HFONT;
 
-use crate::actions::{Action, MemAction, StatsFunc};
-use crate::engine::{Mode, StatsState, WorksheetKind};
+use crate::actions::Action;
+#[cfg(test)]
+use crate::engine::WorksheetKind;
+use crate::engine::{Mode, StatsState};
 use crate::i18n::{Lang, Text};
 use crate::platform;
 use crate::ui::palette::ThemeMode;
 use crate::ui::{metrics, Rect, Ui};
+use rustic_calc_app::keypad::{apply_statistics, KeyInput};
+use rustic_calc_app::startup::{mode_index as index, MODES};
+
+fn keypad_key(vk: u16) -> Option<KeyInput> {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        VK_BACK, VK_DELETE, VK_ESCAPE, VK_RETURN,
+    };
+    match vk {
+        VK_RETURN => Some(KeyInput::Enter),
+        VK_BACK => Some(KeyInput::Backspace),
+        VK_ESCAPE => Some(KeyInput::Escape),
+        VK_DELETE => Some(KeyInput::Delete),
+        _ => None,
+    }
+}
 
 pub struct Shared {
     pub hwnd: HWND,
@@ -100,42 +117,13 @@ impl Shared {
     }
 
     pub fn sidebar_action(&mut self, action: Action, current: f64) -> bool {
-        match action {
-            Action::Mem(MemAction::Clear) => self.memory = 0.0,
-            Action::Mem(MemAction::Recall) => self.sidebar.recall(self.memory),
-            Action::Mem(MemAction::Store) => self.memory = current,
-            Action::Mem(MemAction::Add) => self.memory += current,
-            Action::Mem(MemAction::Sub) => self.memory -= current,
-            Action::StatsDigit(ch) => self.sidebar.digit(ch),
-            Action::StatsDecimal => self.sidebar.decimal(),
-            Action::StatsAdd => self.sidebar.add_data(),
-            Action::StatsClearAll => self.sidebar.clear_dataset(),
-            Action::StatsClear => self.sidebar.clear_entry(),
-            Action::StatsBackspace => self.sidebar.backspace(),
-            Action::StatsSign => self.sidebar.toggle_sign(),
-            Action::StatsExp => self.sidebar.exp_entry(),
-            Action::StatsCalc(func) => {
-                let t = self.lang.text();
-                match func {
-                    StatsFunc::Mean => self.sidebar.show(t.stats_average, self.sidebar.mean()),
-                    StatsFunc::MeanSq => self
-                        .sidebar
-                        .show(t.stats_average_squares, self.sidebar.mean_squares()),
-                    StatsFunc::Sum => self.sidebar.show(t.stats_sum, self.sidebar.sum()),
-                    StatsFunc::SumSq => self
-                        .sidebar
-                        .show(t.stats_sum_squares, self.sidebar.sum_squares()),
-                    StatsFunc::SdPop => self
-                        .sidebar
-                        .show(t.stats_sd, self.sidebar.std_dev_population()),
-                    StatsFunc::SdSample => self
-                        .sidebar
-                        .show(t.stats_sd_sample, self.sidebar.std_dev_sample()),
-                }
-            }
-            _ => return false,
-        }
-        true
+        apply_statistics(
+            action,
+            self.lang,
+            &mut self.sidebar,
+            &mut self.memory,
+            current,
+        )
     }
 }
 
@@ -165,22 +153,6 @@ pub trait View {
     }
 }
 
-fn index(mode: Mode) -> usize {
-    match mode {
-        Mode::Standard => 0,
-        Mode::Scientific => 1,
-        Mode::Programmer => 2,
-        Mode::Statistics => 3,
-        Mode::UnitConversion => 4,
-        Mode::DateCalculation => 5,
-        Mode::Worksheet(WorksheetKind::Mortgage) => 6,
-        Mode::Worksheet(WorksheetKind::VehicleLease) => 7,
-        Mode::Worksheet(WorksheetKind::FuelMpg) => 8,
-        Mode::Worksheet(WorksheetKind::FuelL100) => 9,
-        Mode::Coordinates => 10,
-    }
-}
-
 fn create(mode: Mode) -> Box<dyn View> {
     match mode {
         Mode::Standard => Box::new(standard::StandardView::new()),
@@ -202,7 +174,7 @@ pub struct ViewManager {
 impl ViewManager {
     pub fn new() -> Self {
         Self {
-            slots: (0..11).map(|_| None).collect(),
+            slots: (0..MODES.len()).map(|_| None).collect(),
             active: None,
         }
     }

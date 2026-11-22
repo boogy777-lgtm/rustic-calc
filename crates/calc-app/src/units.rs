@@ -772,15 +772,6 @@ pub fn format_date(date: Date) -> String {
     format!("{:02}.{:02}.{:04}", date.day, date.month, date.year)
 }
 
-pub fn today() -> Date {
-    let (year, month, day) = crate::platform::local_date();
-    Date::new(year, month, day).unwrap_or(Date {
-        year: 1970,
-        month: 1,
-        day: 1,
-    })
-}
-
 /// Returns (years, months, weeks, days, total_days) for the absolute difference.
 pub fn date_difference(from: Date, to: Date) -> (i32, i32, i32, i32, i64) {
     let (start, end) = if from <= to { (from, to) } else { (to, from) };

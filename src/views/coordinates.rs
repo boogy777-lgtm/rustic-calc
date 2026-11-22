@@ -1,15 +1,17 @@
-use std::collections::BTreeMap;
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_ESCAPE, VK_F2};
 use windows_sys::Win32::UI::WindowsAndMessaging::{CBN_SELCHANGE, EN_CHANGE};
 
 use super::{Shared, View};
 use crate::actions::{Action, KeyStyle};
-use crate::coordinates::{catalogue, Crs, Error, LocalPoint, Wgs84};
+use crate::coordinates::catalogue;
 use crate::engine::Mode;
 use crate::i18n::coordinates as strings;
 use crate::platform;
 use crate::ui::{metrics, Rect, Stack, Ui};
+use rustic_calc_app::coordinate_session::{
+    CoordinateInputField, CoordinateSession, CoordinateTemplateSelection,
+};
 
 const ID_BASE: u16 = 500;
 const REGION: usize = 0;
@@ -149,106 +151,38 @@ fn layout(shared: &Shared) -> Layout {
 }
 
 pub struct CoordinateView {
-    region: usize,
-    template: usize, // 0 = custom; otherwise index + 1 in the region catalogue.
-    definition: String,
-    values: [String; 3],
-    drafts: BTreeMap<String, String>,
-    selections: BTreeMap<&'static str, usize>,
-    result: Option<LocalPoint>,
-    error: Option<Error>,
+    session: CoordinateSession,
     show_info: bool,
     controls: [HWND; 9],
 }
 
 impl CoordinateView {
     pub fn new() -> Self {
-        let region = strings::REGIONS.iter().position(|r| r.id == "50").unwrap();
-        let templates = catalogue::for_region("50");
         Self {
-            region,
-            template: 1,
-            definition: templates[0].definition.into(),
-            values: [String::new(), String::new(), "0".into()],
-            drafts: BTreeMap::new(),
-            selections: BTreeMap::new(),
-            result: None,
-            error: None,
+            session: CoordinateSession::new(),
             show_info: false,
             controls: [std::ptr::null_mut(); 9],
         }
     }
 
-    fn templates(&self) -> Vec<catalogue::Template> {
-        catalogue::for_region(strings::REGIONS[self.region].id)
-    }
-
-    fn selected_template(&self) -> Option<catalogue::Template> {
-        self.template
-            .checked_sub(1)
-            .and_then(|i| self.templates().get(i).copied())
-    }
-
-    fn draft_key(&self) -> String {
-        self.selected_template()
-            .map(|t| t.id.into())
-            .unwrap_or_else(|| format!("custom:{}", strings::REGIONS[self.region].id))
-    }
-
-    fn remember(&mut self) {
-        self.drafts
-            .insert(self.draft_key(), self.definition.clone());
-        self.selections
-            .insert(strings::REGIONS[self.region].id, self.template);
-    }
-
-    fn load_definition(&mut self) {
-        self.definition = self
-            .drafts
-            .get(&self.draft_key())
-            .cloned()
-            .unwrap_or_else(|| {
-                self.selected_template()
-                    .map(|t| t.definition.into())
-                    .unwrap_or_default()
-            });
-        platform::set_text(self.controls[DEFINITION], &self.definition);
-        self.clear_result();
-    }
-
-    fn select_region(&mut self, index: usize) {
-        self.remember();
-        self.region = index.min(strings::REGIONS.len() - 1);
-        let count = self.templates().len();
-        self.template = self
-            .selections
-            .get(strings::REGIONS[self.region].id)
-            .copied()
-            .unwrap_or(usize::from(count > 0))
-            .min(count);
-        self.load_definition();
-    }
-
-    fn select_template(&mut self, index: usize) {
-        self.remember();
-        self.template = index.min(self.templates().len());
-        self.load_definition();
-    }
-
     fn sync_inputs(&mut self) {
         if !self.controls[DEFINITION].is_null() {
-            self.definition = platform::get_text(self.controls[DEFINITION]);
+            self.session
+                .set_definition(platform::get_text(self.controls[DEFINITION]));
         }
-        for (i, field) in [LATITUDE, LONGITUDE, HEIGHT].into_iter().enumerate() {
+        for (field, session_field) in [
+            (LATITUDE, CoordinateInputField::Latitude),
+            (LONGITUDE, CoordinateInputField::Longitude),
+            (HEIGHT, CoordinateInputField::Height),
+        ] {
             if !self.controls[field].is_null() {
-                self.values[i] = platform::get_text(self.controls[field]);
+                self.session
+                    .set_text(session_field, platform::get_text(self.controls[field]));
             }
         }
     }
 
     fn clear_result(&mut self) {
-        self.result = None;
-        self.error = None;
         for field in [NORTHING, EASTING] {
             platform::set_text(self.controls[field], "");
         }
@@ -260,17 +194,12 @@ impl CoordinateView {
         }
         self.sync_inputs();
         self.clear_result();
-        let converted = Crs::parse(&self.definition).and_then(|crs| {
-            let point = Wgs84::parse(&self.values[0], &self.values[1], &self.values[2])?;
-            crs.convert(point)
-        });
-        match converted {
+        match self.session.calculate() {
             Ok(point) => {
-                self.result = Some(point);
                 platform::set_text(self.controls[NORTHING], &format!("{:.3}", point.northing_m));
                 platform::set_text(self.controls[EASTING], &format!("{:.3}", point.easting_m));
             }
-            Err(error) => self.error = Some(error),
+            Err(_) => {}
         }
     }
 
@@ -293,39 +222,49 @@ impl CoordinateView {
         }
         let l = layout(shared);
         let t = strings::text(shared.lang);
-        let regions: Vec<_> = strings::REGIONS
+        let regions: Vec<_> = CoordinateSession::regions()
             .iter()
             .map(|r| r.name(shared.lang))
             .collect();
         let mut names = vec![t.custom.to_string()];
         names.extend(
-            self.templates()
+            self.session
+                .templates()
                 .iter()
-                .map(|t| strings::template_name(shared.lang, t.name)),
+                .map(|template| strings::template_name(shared.lang, template.name)),
         );
         let options: Vec<_> = names.iter().map(String::as_str).collect();
-        self.controls[REGION] = shared.combo(ID_BASE, l.controls[REGION], &regions, self.region);
-        self.controls[TEMPLATE] =
-            shared.combo(ID_BASE + 1, l.controls[TEMPLATE], &options, self.template);
-        self.controls[DEFINITION] =
-            shared.text_area(ID_BASE + 2, l.controls[DEFINITION], &self.definition, false);
-        for (i, field) in [LATITUDE, LONGITUDE, HEIGHT].into_iter().enumerate() {
-            self.controls[field] =
-                shared.edit(ID_BASE + field as u16, l.controls[field], &self.values[i]);
+        let region_index = CoordinateSession::regions()
+            .iter()
+            .position(|region| region.id == self.session.region().as_str())
+            .unwrap_or(0);
+        self.controls[REGION] = shared.combo(ID_BASE, l.controls[REGION], &regions, region_index);
+        self.controls[TEMPLATE] = shared.combo(
+            ID_BASE + 1,
+            l.controls[TEMPLATE],
+            &options,
+            self.template_index(),
+        );
+        self.controls[DEFINITION] = shared.text_area(
+            ID_BASE + 2,
+            l.controls[DEFINITION],
+            self.session.definition(),
+            false,
+        );
+        for (field, session_field) in [
+            (LATITUDE, CoordinateInputField::Latitude),
+            (LONGITUDE, CoordinateInputField::Longitude),
+            (HEIGHT, CoordinateInputField::Height),
+        ] {
+            self.controls[field] = shared.edit(
+                ID_BASE + field as u16,
+                l.controls[field],
+                self.session.text(session_field),
+            );
         }
         for (field, value) in [
-            (
-                NORTHING,
-                self.result
-                    .map(|p| format!("{:.3}", p.northing_m))
-                    .unwrap_or_default(),
-            ),
-            (
-                EASTING,
-                self.result
-                    .map(|p| format!("{:.3}", p.easting_m))
-                    .unwrap_or_default(),
-            ),
+            (NORTHING, self.output_text(true)),
+            (EASTING, self.output_text(false)),
         ] {
             self.controls[field] = shared.edit(ID_BASE + field as u16, l.controls[field], &value);
             platform::set_read_only(self.controls[field], true);
@@ -360,17 +299,42 @@ impl CoordinateView {
 
     fn source_note(&self, shared: &Shared) -> String {
         let t = strings::text(shared.lang);
-        if let Some(template) = self.selected_template() {
-            let status = if self.definition.trim() == template.definition {
+        if let Some(template) = self.session.selected_template() {
+            let status = if self.session.definition().trim() == template.definition {
                 t.original
             } else {
                 t.modified
             };
-            format!("{}: geo-ts/msk · {} · {status}", t.source, template.id)
-        } else if self.templates().is_empty() && self.definition.is_empty() {
+            format!(
+                "{}: geo-ts/msk · {} · {status}",
+                t.source,
+                template.id.as_str()
+            )
+        } else if self.session.templates().is_empty() && self.session.definition().is_empty() {
             t.no_templates.into()
         } else {
             t.custom_status.into()
+        }
+    }
+
+    fn template_index(&self) -> usize {
+        match self.session.selection() {
+            CoordinateTemplateSelection::Custom => 0,
+            CoordinateTemplateSelection::Template(id) => self
+                .session
+                .templates()
+                .iter()
+                .position(|template| template.id == *id)
+                .map(|index| index + 1)
+                .unwrap_or(0),
+        }
+    }
+
+    fn output_text(&self, northing: bool) -> String {
+        match self.session.result() {
+            Some(Ok(output)) if northing => format!("{:.3}", output.northing_m),
+            Some(Ok(output)) => format!("{:.3}", output.easting_m),
+            _ => String::new(),
         }
     }
 }
@@ -386,7 +350,6 @@ impl View for CoordinateView {
 
     fn on_exit(&mut self, _shared: &mut Shared) {
         self.sync_inputs();
-        self.remember();
         self.destroy_controls();
     }
 
@@ -437,7 +400,7 @@ impl View for CoordinateView {
             KeyStyle::Normal,
             Action::Calculate,
         );
-        if let Some(error) = &self.error {
+        if let Some(Err(error)) = self.session.result() {
             ui.error(l.error, &strings::error(shared.lang, error));
         }
         for (rect, label) in l.result_labels.into_iter().zip([t.northing, t.easting]) {
@@ -452,12 +415,8 @@ impl View for CoordinateView {
             Action::Calculate => self.calculate(),
             Action::CoordinateInfo => self.toggle_info(),
             Action::CoordinateReset if !self.show_info => {
-                self.definition = self
-                    .selected_template()
-                    .map(|t| t.definition.into())
-                    .unwrap_or_default();
-                platform::set_text(self.controls[DEFINITION], &self.definition);
-                self.remember();
+                self.session.reset_definition();
+                platform::set_text(self.controls[DEFINITION], self.session.definition());
                 self.clear_result();
             }
             _ => {}
@@ -477,18 +436,31 @@ impl View for CoordinateView {
         if u32::from(code) == CBN_SELCHANGE {
             self.sync_inputs();
             if index == REGION {
-                self.select_region(platform::combo_selected(self.controls[REGION]));
+                let region_index = platform::combo_selected(self.controls[REGION])
+                    .min(CoordinateSession::regions().len().saturating_sub(1));
+                if let Some(region) = CoordinateSession::regions().get(region_index) {
+                    let _ = self.session.select_region(region.id);
+                }
+                platform::set_text(self.controls[DEFINITION], self.session.definition());
+                self.clear_result();
                 let combo = self.controls[TEMPLATE];
                 platform::combo_reset(combo);
                 platform::combo_add(combo, strings::text(shared.lang).custom);
-                for template in self.templates() {
+                for template in self.session.templates() {
                     platform::combo_add(combo, &strings::template_name(shared.lang, template.name));
                 }
-                platform::combo_select(combo, self.template);
+                platform::combo_select(combo, self.template_index());
                 return true;
             }
             if index == TEMPLATE {
-                self.select_template(platform::combo_selected(self.controls[TEMPLATE]));
+                let selection = platform::combo_selected(self.controls[TEMPLATE]);
+                if selection == 0 {
+                    self.session.select_custom();
+                } else if let Some(template) = self.session.templates().get(selection - 1) {
+                    let _ = self.session.select_template(template.id.clone());
+                }
+                platform::set_text(self.controls[DEFINITION], self.session.definition());
+                self.clear_result();
                 return true;
             }
         }
@@ -505,14 +477,15 @@ impl View for CoordinateView {
 
     fn display(&self, shared: &Shared) -> String {
         let text = strings::text(shared.lang);
-        self.result
-            .map(|p| {
+        match self.session.result() {
+            Some(Ok(point)) => {
                 format!(
                     "{}: {:.3}\r\n{}: {:.3}",
-                    text.northing, p.northing_m, text.easting, p.easting_m
+                    text.northing, point.northing_m, text.easting, point.easting_m
                 )
-            })
-            .unwrap_or_default()
+            }
+            _ => String::new(),
+        }
     }
 }
 
@@ -521,35 +494,44 @@ mod tests {
     use super::*;
     use crate::i18n::Lang;
     use crate::ui::Fonts;
+    use rustic_calc_app::coordinates::Error;
 
     #[test]
     fn all_catalogue_regions_exist_but_missing_definitions_are_not_fabricated() {
-        assert_eq!(strings::REGIONS.len(), 89);
-        let ids: std::collections::BTreeSet<_> = strings::REGIONS.iter().map(|r| r.id).collect();
+        assert_eq!(CoordinateSession::regions().len(), 89);
+        let ids: std::collections::BTreeSet<_> =
+            CoordinateSession::regions().iter().map(|r| r.id).collect();
         assert_eq!(ids.len(), 89);
         assert!(catalogue::all().all(|t| ids.contains(t.region)));
         let mut view = CoordinateView::new();
-        view.select_region(strings::REGIONS.iter().position(|r| r.id == "17").unwrap());
-        assert_eq!(view.template, 0);
-        assert!(view.definition.is_empty());
+        view.session.select_region("17").unwrap();
+        assert_eq!(
+            view.session.selection(),
+            &CoordinateTemplateSelection::Custom
+        );
+        assert!(view.session.definition().is_empty());
         view.calculate();
-        assert_eq!(view.error, Some(Error::EmptyDefinition));
+        assert_eq!(view.session.result(), Some(&Err(Error::EmptyDefinition)));
     }
 
     #[test]
     fn each_template_and_custom_region_retains_its_own_unsaved_draft() {
         let mut view = CoordinateView::new();
-        let region = view.region;
-        view.definition = "original draft".into();
-        view.select_template(0);
-        assert!(view.definition.is_empty());
-        view.definition = "custom draft".into();
-        view.select_region(0);
-        view.select_region(region);
-        assert_eq!(view.template, 0);
-        assert_eq!(view.definition, "custom draft");
-        view.select_template(1);
-        assert_eq!(view.definition, "original draft");
+        let region = view.session.region().clone();
+        let first_template = view.session.templates()[0].id.clone();
+        view.session.set_definition("original draft");
+        view.session.select_custom();
+        assert!(view.session.definition().is_empty());
+        view.session.set_definition("custom draft");
+        view.session.select_region("01").unwrap();
+        view.session.select_region(region).unwrap();
+        assert_eq!(
+            view.session.selection(),
+            &CoordinateTemplateSelection::Custom
+        );
+        assert_eq!(view.session.definition(), "custom draft");
+        view.session.select_template(first_template).unwrap();
+        assert_eq!(view.session.definition(), "original draft");
     }
 
     #[test]
@@ -594,14 +576,14 @@ mod tests {
         assert!(view.controls.iter().all(|c| !c.is_null()));
         assert_eq!(
             unsafe { SendMessageW(view.controls[REGION], CB_GETCOUNT, 0, 0) },
-            89
+            CoordinateSession::regions().len() as isize
         );
         platform::set_text(view.controls[LATITUDE], "55,7558");
         platform::set_text(view.controls[LONGITUDE], "37.6173");
         platform::set_text(view.controls[HEIGHT], "150");
         view.command(ID_BASE + LATITUDE as u16, EN_CHANGE as u16, &mut shared);
         view.action(Action::Calculate, &mut shared);
-        assert!(view.result.is_some());
+        assert!(matches!(view.session.result(), Some(Ok(_))));
         assert!(!platform::get_text(view.controls[NORTHING]).is_empty());
         let result = platform::get_text(view.controls[NORTHING]);
         unsafe {
@@ -612,14 +594,24 @@ mod tests {
             result,
             "results must remain read-only"
         );
+        view.on_exit(&mut shared);
+        view.on_enter(&mut shared);
+        assert_eq!(
+            platform::get_text(view.controls[NORTHING]),
+            result,
+            "unchanged native drafts must retain the calculated output"
+        );
 
-        let edited = format!("{}\r\n+nadgrids=unsupported.gsb", view.definition);
+        let edited = format!("{}\r\n+nadgrids=unsupported.gsb", view.session.definition());
         platform::set_text(view.controls[DEFINITION], &edited);
         view.command(ID_BASE + DEFINITION as u16, EN_CHANGE as u16, &mut shared);
-        assert!(view.result.is_none());
+        assert!(view.session.result().is_none());
         assert!(platform::get_text(view.controls[NORTHING]).is_empty());
         view.calculate();
-        assert!(matches!(view.error, Some(Error::Unsupported(_))));
+        assert!(matches!(
+            view.session.result(),
+            Some(Err(Error::Unsupported(_)))
+        ));
 
         for (dpi, lang) in [
             (144, Lang::En),
@@ -655,8 +647,8 @@ mod tests {
         view.key(VK_ESCAPE, false, &mut shared);
         assert!(!view.show_info);
         view.action(Action::CoordinateReset, &mut shared);
-        assert!(!view.definition.contains("nadgrids"));
-        assert!(view.error.is_none());
+        assert!(!view.session.definition().contains("nadgrids"));
+        assert!(view.session.result().is_none());
         view.on_exit(&mut shared);
     }
 

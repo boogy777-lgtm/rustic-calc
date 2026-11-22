@@ -7,6 +7,8 @@
 *.cjs text eol=lf
 *.tsv text eol=lf
 third_party/*.txt text eol=lf
+# Preserve publisher whitespace in pinned notices.
+third_party/license-notice-overrides/** text eol=lf -whitespace
 *.ps1 text eol=crlf
 *.cmd text eol=crlf
 *.iss text eol=crlf

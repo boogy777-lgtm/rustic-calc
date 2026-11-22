@@ -2,9 +2,10 @@ use crate::actions::Action;
 use crate::engine::{Mode, WorksheetKind};
 use crate::i18n::Lang;
 use crate::platform::{self, WindowHandler};
-use crate::ui::palette::{Palette, ThemeMode};
+use crate::ui::palette::{self, Palette, ThemeMode};
 use crate::ui::{Canvas, Fonts, Hit, Rect, Ui};
 use crate::views::{mode_client_size, Shared, ViewManager};
+use rustic_calc_app::startup::mode_shortcut;
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::Graphics::Gdi::{
     DT_LEFT, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, HBRUSH, HDC,
@@ -38,8 +39,8 @@ impl App {
         shared.lang = lang;
         shared.theme = theme;
         let system_dark = platform::system_prefers_dark();
-        let palette = theme.resolve(system_dark);
-        let dark = theme == ThemeMode::Dark || (theme == ThemeMode::System && system_dark);
+        let palette = palette::resolve(theme, system_dark);
+        let dark = theme.is_dark(system_dark);
         shared.dark = dark;
         platform::set_control_palette(palette);
         Self {
@@ -153,7 +154,7 @@ impl App {
 
     fn menu_items(&self, index: usize) -> Vec<platform::MenuItem> {
         let t = self.shared.text();
-        let active = mode_command(self.mode);
+        let active = platform::mode_command(self.mode);
         match index {
             0 => {
                 let worksheets = vec![
@@ -356,17 +357,13 @@ impl App {
             return;
         }
         self.shared.theme = mode;
-        self.apply_palette(mode.resolve(self.system_dark));
+        self.apply_palette(palette::resolve(mode, self.system_dark));
         self.sync_theme();
         platform::redraw(self.hwnd);
     }
 
     fn dark_mode(&self) -> bool {
-        match self.shared.theme {
-            ThemeMode::Dark => true,
-            ThemeMode::White => false,
-            ThemeMode::System => self.system_dark,
-        }
+        self.shared.theme.is_dark(self.system_dark)
     }
 
     fn sync_theme(&mut self) {
@@ -550,7 +547,13 @@ mod menu_fit_tests {
             platform::{self, WindowHandler},
             ui::palette::ThemeMode,
         };
-        use windows_sys::Win32::{Foundation::HWND, UI::WindowsAndMessaging::*};
+        use windows_sys::Win32::{
+            Foundation::HWND,
+            UI::{
+                Input::KeyboardAndMouse::{VK_1, VK_E, VK_RETURN},
+                WindowsAndMessaging::*,
+            },
+        };
         struct HiddenWindow(HWND);
         impl Drop for HiddenWindow {
             fn drop(&mut self) {
@@ -591,7 +594,7 @@ mod menu_fit_tests {
             301,
             windows_sys::Win32::UI::WindowsAndMessaging::EN_CHANGE as u16,
         );
-        for dpi in [144, 192, 72, 96] {
+        for dpi in [144, 192, 240, 288, 384, 168, 120, 72, 96] {
             app.on_dpi(dpi);
             assert_eq!(app.shared.scale, crate::ui::DpiScale::new(dpi).factor());
             let edit = unsafe { GetDlgItem(hwnd, 301) };
@@ -600,6 +603,23 @@ mod menu_fit_tests {
         assert_eq!(
             app.preferred_client_size(Mode::DateCalculation),
             original_size
+        );
+
+        // Exercise the adapter against hidden native edits, not the user's keyboard.
+        assert!(app.on_key(VK_1, true));
+        assert!(app.on_key(VK_E, true));
+        let from_edit = unsafe { GetDlgItem(hwnd, 301) };
+        assert_eq!(platform::get_text(from_edit), "01.01.2030");
+        let to_edit = unsafe { GetDlgItem(hwnd, 302) };
+        let to: Vec<u16> = "08.01.2030\0".encode_utf16().collect();
+        assert!(!to_edit.is_null());
+        unsafe { SetWindowTextW(to_edit, to.as_ptr()) };
+        assert!(app.on_command(302, EN_CHANGE as u16));
+        assert!(app.on_key(VK_RETURN, false));
+        let active = app.manager.active_ref().unwrap();
+        assert_eq!(
+            active.display(&app.shared),
+            format!("7 {}", app.shared.text().days_suffix),
         );
         app.on_destroy();
     }
@@ -688,22 +708,6 @@ mod menu_fit_tests {
 pub(crate) fn menu_button_rect(hit: Rect, scale: f32) -> Rect {
     let gap = crate::ui::dpi::dp_to_px(crate::ui::metrics::MENU_FOOT_GAP, scale);
     Rect::new(hit.x, hit.y + gap, hit.w, (hit.h - gap * 2 - 1).max(0))
-}
-
-fn mode_command(mode: Mode) -> u16 {
-    match mode {
-        Mode::Standard => platform::MODE_STANDARD,
-        Mode::Scientific => platform::MODE_SCIENTIFIC,
-        Mode::Programmer => platform::MODE_PROGRAMMER,
-        Mode::Statistics => platform::MODE_STATISTICS,
-        Mode::UnitConversion => platform::MODE_UNIT,
-        Mode::DateCalculation => platform::MODE_DATE,
-        Mode::Worksheet(WorksheetKind::Mortgage) => platform::MODE_MORTGAGE,
-        Mode::Worksheet(WorksheetKind::VehicleLease) => platform::MODE_LEASE,
-        Mode::Worksheet(WorksheetKind::FuelMpg) => platform::MODE_MPG,
-        Mode::Worksheet(WorksheetKind::FuelL100) => platform::MODE_L100,
-        Mode::Coordinates => platform::MODE_COORDINATES,
-    }
 }
 
 fn client_rect(hwnd: HWND, menu_bar_h: i32) -> Rect {
@@ -871,59 +875,15 @@ impl WindowHandler for App {
             return true;
         }
         if ctrl {
+            // Accept only Win32 letter/digit virtual keys, not ASCII lowercase
+            // values that overlap other virtual keys such as the numeric pad.
+            if let VK_0..=VK_9 | VK_A..=VK_Z = vk {
+                if let Some(mode) = mode_shortcut(vk as u8) {
+                    self.switch_mode(mode);
+                    return true;
+                }
+            }
             match vk {
-                VK_1 => {
-                    self.switch_mode(Mode::Standard);
-                    return true;
-                }
-                VK_2 => {
-                    self.switch_mode(Mode::Scientific);
-                    return true;
-                }
-                VK_3 => {
-                    self.switch_mode(Mode::Programmer);
-                    return true;
-                }
-                VK_4 => {
-                    self.switch_mode(Mode::Statistics);
-                    return true;
-                }
-                VK_5 => {
-                    self.switch_mode(Mode::UnitConversion);
-                    return true;
-                }
-                VK_6 => {
-                    self.switch_mode(Mode::DateCalculation);
-                    return true;
-                }
-                VK_7 => {
-                    self.switch_mode(Mode::Worksheet(WorksheetKind::Mortgage));
-                    return true;
-                }
-                VK_8 => {
-                    self.switch_mode(Mode::Worksheet(WorksheetKind::VehicleLease));
-                    return true;
-                }
-                VK_9 => {
-                    self.switch_mode(Mode::Worksheet(WorksheetKind::FuelMpg));
-                    return true;
-                }
-                VK_0 => {
-                    self.switch_mode(Mode::Worksheet(WorksheetKind::FuelL100));
-                    return true;
-                }
-                VK_U => {
-                    self.switch_mode(Mode::UnitConversion);
-                    return true;
-                }
-                VK_E => {
-                    self.switch_mode(Mode::DateCalculation);
-                    return true;
-                }
-                VK_G => {
-                    self.switch_mode(Mode::Coordinates);
-                    return true;
-                }
                 VK_C => {
                     self.copy();
                     return true;
@@ -1039,7 +999,7 @@ impl WindowHandler for App {
         }
         self.system_dark = system_dark;
         if self.shared.theme == ThemeMode::System {
-            let palette = ThemeMode::System.resolve(system_dark);
+            let palette = palette::resolve(ThemeMode::System, system_dark);
             self.apply_palette(palette);
             self.sync_theme();
             platform::redraw(self.hwnd);

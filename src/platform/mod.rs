@@ -7,6 +7,8 @@ pub use menu::{root_is_open, show_menu, take_dismiss_click, MenuItem, MenuStyle}
 pub const CMD_MENU_PREVIOUS: u16 = 7900;
 pub const CMD_MENU_NEXT: u16 = 7901;
 
+use rustic_calc_app::engine::{Mode, WorksheetKind};
+use rustic_calc_app::startup::MODE_SHORTCUTS;
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicU32, Ordering};
 use windows_sys::Win32::Foundation::*;
@@ -1214,34 +1216,34 @@ pub fn run(
     }
 }
 
-/// Ctrl+1…Ctrl+0, legacy Ctrl+U/Ctrl+E aliases, and Ctrl+G coordinates.
-/// Kept as data so the mapping can be regression-tested without a message loop.
-pub(crate) const MODE_ACCELERATORS: [(u16, u16); 13] = [
-    (VK_1, MODE_STANDARD),
-    (VK_2, MODE_SCIENTIFIC),
-    (VK_3, MODE_PROGRAMMER),
-    (VK_4, MODE_STATISTICS),
-    (VK_5, MODE_UNIT),
-    (VK_6, MODE_DATE),
-    (VK_7, MODE_MORTGAGE),
-    (VK_8, MODE_LEASE),
-    (VK_9, MODE_MPG),
-    (VK_0, MODE_L100),
-    (VK_U, MODE_UNIT),
-    (VK_E, MODE_DATE),
-    (VK_G, MODE_COORDINATES),
-];
+pub fn mode_command(mode: Mode) -> u16 {
+    match mode {
+        Mode::Standard => MODE_STANDARD,
+        Mode::Scientific => MODE_SCIENTIFIC,
+        Mode::Programmer => MODE_PROGRAMMER,
+        Mode::Statistics => MODE_STATISTICS,
+        Mode::UnitConversion => MODE_UNIT,
+        Mode::DateCalculation => MODE_DATE,
+        Mode::Worksheet(WorksheetKind::Mortgage) => MODE_MORTGAGE,
+        Mode::Worksheet(WorksheetKind::VehicleLease) => MODE_LEASE,
+        Mode::Worksheet(WorksheetKind::FuelMpg) => MODE_MPG,
+        Mode::Worksheet(WorksheetKind::FuelL100) => MODE_L100,
+        Mode::Coordinates => MODE_COORDINATES,
+    }
+}
+
+pub(crate) fn mode_accelerator_pairs() -> [(u16, u16); MODE_SHORTCUTS.len()] {
+    // Win32 virtual-key codes for the digit and Latin letter keys match ASCII.
+    MODE_SHORTCUTS.map(|(key, mode)| (u16::from(key), mode_command(mode)))
+}
 
 fn mode_accelerators() -> HACCEL {
     // Command IDs match the View menu and the original mode commands.
-    let table: Vec<ACCEL> = MODE_ACCELERATORS
-        .iter()
-        .map(|&(key, cmd)| ACCEL {
-            fVirt: FVIRTKEY | FCONTROL,
-            key,
-            cmd,
-        })
-        .collect();
+    let table = mode_accelerator_pairs().map(|(key, cmd)| ACCEL {
+        fVirt: FVIRTKEY | FCONTROL,
+        key,
+        cmd,
+    });
     unsafe { CreateAcceleratorTableW(table.as_ptr(), table.len() as i32) }
 }
 

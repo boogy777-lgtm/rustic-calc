@@ -1,0 +1,470 @@
+import { AboutSlint, Button, CheckBox, ComboBox, LineEdit, Palette, ScrollView, TextEdit } from "std-widgets.slint";
+export { Palette } from "std-widgets.slint";
+
+export struct KeyCell {
+    label: string,
+    command: int,
+    row: int,
+    col: int,
+    row_span: int,
+    col_span: int,
+    enabled: bool,
+    style: int,
+}
+
+export struct FieldSpec {
+    id: int,
+    label: string,
+    value: string,
+    kind: int,
+    options: [string],
+    selected: int,
+    command: int,
+}
+
+component FieldRow inherits Rectangle {
+    in property <FieldSpec> field;
+    in property <color> foreground;
+    in property <color> muted;
+    callback text-edited(int, string);
+    callback selection-changed(int, int);
+    callback button-pressed(int);
+
+    height: field.kind == 3 || field.kind == 4 ? 142px : field.kind == 2 ? 52px : 62px;
+    background: transparent;
+
+    VerticalLayout {
+        spacing: 3px;
+
+        if root.field.kind != 5: Text {
+            text: root.field.label;
+            color: root.muted;
+            font-size: 12px;
+            vertical-stretch: 0;
+        }
+
+        if root.field.kind == 1: ComboBox {
+            model: root.field.options;
+            current-index: root.field.selected;
+            selected => { root.selection-changed(root.field.id, self.current-index); }
+        }
+        if root.field.kind == 2: Text {
+            text: root.field.value;
+            color: root.foreground;
+            font-size: 15px;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        if root.field.kind == 3 || root.field.kind == 4: TextEdit {
+            text: root.field.value;
+            read-only: root.field.kind == 4;
+            edited(value) => { root.text-edited(root.field.id, value); }
+        }
+        if root.field.kind == 5: Button {
+            text: root.field.label;
+            clicked => { root.button-pressed(root.field.command); }
+        }
+        if root.field.kind == 0: LineEdit {
+            text: root.field.value;
+            edited(value) => { root.text-edited(root.field.id, value); }
+        }
+    }
+}
+
+component CalculatorKey inherits Rectangle {
+    in property <KeyCell> key;
+    in property <color> foreground;
+    in property <color> key-background;
+    in property <color> operator-background;
+    in property <color> memory-background;
+    in property <color> equals-background;
+    in property <color> key-border;
+    in property <color> disabled-background;
+    in property <color> disabled-text;
+    callback pressed();
+
+    background: key.style == 4 ? transparent
+        : !key.enabled ? disabled-background
+        : key.style == 2 ? equals-background
+        : key.style == 1 ? operator-background
+        : key.style == 3 ? memory-background
+        : key-background;
+    border-color: key.style == 4 ? transparent : key-border;
+    border-width: key.style == 4 ? 0px : 1px;
+    border-radius: 5px;
+
+    Text {
+        text: root.key.label;
+        color: root.key.enabled ? root.foreground : root.disabled-text;
+        font-size: 16px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    TouchArea {
+        enabled: root.key.enabled && root.key.style != 4;
+        clicked => { root.pressed(); }
+    }
+}
+
+component BitCell inherits Rectangle {
+    in property <KeyCell> bit;
+    in property <color> panel-background;
+    in property <color> panel-border;
+    in property <color> bit-on;
+    in property <color> bit-off;
+    callback pressed();
+
+    background: !bit.enabled ? transparent : bit.style == 1 ? bit-on : panel-background;
+    border-color: !bit.enabled ? transparent : panel-border;
+    border-width: !bit.enabled ? 0px : 1px;
+    border-radius: 2px;
+
+    Text {
+        text: root.bit.label;
+        color: root.bit.style == 1 ? root.panel-background : root.bit-off;
+        font-size: 9px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    TouchArea {
+        enabled: root.bit.enabled;
+        clicked => { root.pressed(); }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "Rustic Calc";
+    preferred-width: 760px;
+    preferred-height: 760px;
+    min-width: 500px;
+    min-height: 560px;
+
+    in property <[string]> mode-options;
+    in-out property <int> mode-index;
+    in property <[string]> language-options;
+    in-out property <int> language-index;
+    in property <[string]> theme-options;
+    in-out property <int> theme-index;
+    in property <string> section-title;
+    in property <string> expression;
+    in property <string> display;
+    in property <string> status-text;
+    in property <bool> status-error;
+    in property <[FieldSpec]> fields;
+    in property <[KeyCell]> keys;
+    in property <[KeyCell]> secondary-keys;
+    in property <[KeyCell]> bit-keys;
+    in property <string> history-text;
+    in property <bool> grouping;
+    in property <bool> show-history;
+    in property <string> grouping-label;
+    in property <string> history-label;
+    in property <bool> show-about;
+    in property <string> about-button-label;
+    in property <string> about-title;
+    in property <string> about-app-text;
+    in property <string> close-label;
+    in property <color> window-background: #eaf1f8;
+    in property <color> panel-background: #f8fbfe;
+    in property <color> panel-border: #b8c8d8;
+    in property <color> foreground: #1e2832;
+    in property <color> muted: #5a6978;
+    in property <color> accent: #d99a36;
+    in property <color> key-background: #f7fafd;
+    in property <color> operator-background: #e8f1f9;
+    in property <color> memory-background: #edf3f8;
+    in property <color> equals-background: #f5b84c;
+    in property <color> key-border: #becddc;
+    in property <color> disabled-background: #e0e8f1;
+    in property <color> disabled-text: #919dab;
+    in property <color> bit-on: #1c568c;
+    in property <color> bit-off: #788c9e;
+
+    callback request-mode(int);
+    callback request-language(int);
+    callback request-theme(int);
+    callback request-field-text(int, string);
+    callback request-field-selection(int, int);
+    callback request-action(int);
+    callback request-about(bool);
+    callback request-grouping(bool);
+    callback request-history(bool);
+    callback request-keyboard(string, bool) -> bool;
+
+    background: window-background;
+
+    FocusScope {
+        width: parent.width;
+        height: parent.height;
+
+        VerticalLayout {
+            padding: 14px;
+            spacing: 10px;
+
+            HorizontalLayout {
+                spacing: 6px;
+                ComboBox {
+                    model: root.mode-options;
+                    current-index: root.mode-index;
+                    horizontal-stretch: 2;
+                    min-width: 0px;
+                    selected => { root.request-mode(self.current-index); }
+                }
+                ComboBox {
+                    model: root.language-options;
+                    current-index: root.language-index;
+                    horizontal-stretch: 1;
+                    min-width: 0px;
+                    selected => { root.request-language(self.current-index); }
+                }
+                ComboBox {
+                    model: root.theme-options;
+                    current-index: root.theme-index;
+                    horizontal-stretch: 1;
+                    min-width: 0px;
+                    selected => { root.request-theme(self.current-index); }
+                }
+                Button {
+                    text: root.about-button-label;
+                    clicked => { root.request-about(true); }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 10px;
+                CheckBox {
+                    text: root.grouping-label;
+                    checked: root.grouping;
+                    toggled => { root.request-grouping(self.checked); }
+                }
+                CheckBox {
+                    text: root.history-label;
+                    checked: root.show-history;
+                    toggled => { root.request-history(self.checked); }
+                }
+            }
+
+            if root.show-history && !root.show-about && root.history-text != "": TextEdit {
+                text: root.history-text;
+                read-only: true;
+                height: 86px;
+            }
+
+            if root.show-about: VerticalLayout {
+                vertical-stretch: 1;
+                spacing: 10px;
+                Rectangle {
+                    background: root.panel-background;
+                    border-color: root.panel-border;
+                    border-width: 1px;
+                    border-radius: 5px;
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 8px;
+                        Text {
+                            text: root.about-title;
+                            color: root.foreground;
+                            font-size: 19px;
+                            vertical-stretch: 0;
+                        }
+                        Text {
+                            text: root.about-app-text;
+                            color: root.muted;
+                            font-size: 12px;
+                            wrap: word-wrap;
+                            vertical-stretch: 0;
+                        }
+                        // Isolate the upstream attribution from the layout so a
+                        // topmost hit target can cover it without changing its
+                        // size or participating in the layout twice.
+                        Rectangle {
+                            background: transparent;
+                            vertical-stretch: 1;
+
+                            about-slint := AboutSlint {
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                            // AboutSlint's own full-size TouchArea calls
+                            // Platform.open-url. Keep its attribution visible,
+                            // but swallow clicks in a later sibling.
+                            about-slint-input-shield := TouchArea {
+                                width: parent.width;
+                                height: parent.height;
+                                clicked => {}
+                            }
+                        }
+                    }
+                }
+                Button {
+                    text: root.close-label;
+                    clicked => { root.request-about(false); }
+                }
+            }
+
+            if !root.show-about: VerticalLayout {
+                vertical-stretch: 1;
+                spacing: 10px;
+
+                Text {
+                    text: root.section-title;
+                    color: root.foreground;
+                    font-size: 19px;
+                    vertical-stretch: 0;
+                }
+
+                if root.display != "" || root.expression != "": Rectangle {
+                    height: 82px;
+                    background: root.panel-background;
+                    border-color: root.panel-border;
+                    border-width: 1px;
+                    border-radius: 5px;
+
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 2px;
+                        Text {
+                            text: root.expression;
+                            color: root.muted;
+                            font-size: 12px;
+                            horizontal-alignment: right;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: root.display;
+                            color: root.foreground;
+                            font-size: 28px;
+                            horizontal-alignment: right;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                }
+
+                if root.status-text != "": Text {
+                    text: root.status-text;
+                    color: root.status-error ? #a4322a : root.muted;
+                    font-size: 13px;
+                    wrap: word-wrap;
+                    vertical-stretch: 0;
+                }
+
+                if root.bit-keys.length > 0: GridLayout {
+                    height: 42px;
+                    spacing: 1px;
+                    for bit in root.bit-keys: BitCell {
+                        bit: bit;
+                        panel-background: root.panel-background;
+                        panel-border: root.panel-border;
+                        bit-on: root.bit-on;
+                        bit-off: root.bit-off;
+                        row: bit.row;
+                        col: bit.col;
+                        pressed => { root.request-action(bit.command); }
+                    }
+                }
+
+                if root.fields.length > 0: ScrollView {
+                    vertical-stretch: root.keys.length > 0 ? 0 : 1;
+                    VerticalLayout {
+                        spacing: 7px;
+                        for field in root.fields: FieldRow {
+                            field: field;
+                            foreground: root.foreground;
+                            muted: root.muted;
+                            text-edited(id, value) => { root.request-field-text(id, value); }
+                            selection-changed(id, index) => { root.request-field-selection(id, index); }
+                            button-pressed(command) => { root.request-action(command); }
+                        }
+                    }
+                }
+
+                if root.keys.length > 0 && root.secondary-keys.length > 0: HorizontalLayout {
+                    spacing: 10px;
+                    GridLayout {
+                        spacing: 6px;
+                        horizontal-stretch: 1;
+                        vertical-stretch: 3;
+                        for key in root.keys: CalculatorKey {
+                            key: key;
+                            foreground: root.foreground;
+                            key-background: root.key-background;
+                            operator-background: root.operator-background;
+                            memory-background: root.memory-background;
+                            equals-background: root.equals-background;
+                            key-border: root.key-border;
+                            disabled-background: root.disabled-background;
+                            disabled-text: root.disabled-text;
+                            row: key.row;
+                            col: key.col;
+                            rowspan: key.row_span;
+                            colspan: key.col_span;
+                            pressed => { root.request-action(key.command); }
+                        }
+                    }
+                    GridLayout {
+                        spacing: 6px;
+                        horizontal-stretch: 1;
+                        vertical-stretch: 3;
+                        for key in root.secondary-keys: CalculatorKey {
+                            key: key;
+                            foreground: root.foreground;
+                            key-background: root.key-background;
+                            operator-background: root.operator-background;
+                            memory-background: root.memory-background;
+                            equals-background: root.equals-background;
+                            key-border: root.key-border;
+                            disabled-background: root.disabled-background;
+                            disabled-text: root.disabled-text;
+                            row: key.row;
+                            col: key.col;
+                            rowspan: key.row_span;
+                            colspan: key.col_span;
+                            pressed => { root.request-action(key.command); }
+                        }
+                    }
+                }
+
+                if root.keys.length > 0 && root.secondary-keys.length == 0: GridLayout {
+                    spacing: 6px;
+                    vertical-stretch: 3;
+                    for key in root.keys: CalculatorKey {
+                        key: key;
+                        foreground: root.foreground;
+                        key-background: root.key-background;
+                        operator-background: root.operator-background;
+                        memory-background: root.memory-background;
+                        equals-background: root.equals-background;
+                        key-border: root.key-border;
+                        disabled-background: root.disabled-background;
+                        disabled-text: root.disabled-text;
+                        row: key.row;
+                        col: key.col;
+                        rowspan: key.row_span;
+                        colspan: key.col_span;
+                        pressed => { root.request-action(key.command); }
+                    }
+                }
+            }
+        }
+
+        key-pressed(event) => {
+            if event.text == Key.Return {
+                if root.request-keyboard("@enter", event.modifiers.control) { accept } else { reject }
+            } else if event.text == Key.Backspace {
+                if root.request-keyboard("@backspace", event.modifiers.control) { accept } else { reject }
+            } else if event.text == Key.Delete {
+                if root.request-keyboard("@delete", event.modifiers.control) { accept } else { reject }
+            } else if event.text == Key.Escape {
+                if root.request-keyboard("@escape", event.modifiers.control) { accept } else { reject }
+            } else if event.text == Key.F2 {
+                if root.request-keyboard("@f2", event.modifiers.control) { accept } else { reject }
+            } else {
+                if root.request-keyboard(event.text, event.modifiers.control) { accept } else { reject }
+            }
+        }
+    }
+}

@@ -1,6 +1,6 @@
 [package]
 name = "rustic-calc"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 description = "Rustic Calc: a lightweight native Windows calculator in Rust"
 license = "MIT"
@@ -8,11 +8,18 @@ repository = "https://github.com/boogy777-lgtm/rustic-calc"
 readme = "README.md"
 publish = false
 
+[workspace]
+members = ["crates/calc-app"]
+default-members = [".", "crates/calc-app"]
+exclude = ["editions/slint", "editions/gpui"]
+resolver = "2"
+
 [[bin]]
 name = "calc1"
 path = "src/main.rs"
 
 [dependencies]
+rustic-calc-app = { path = "crates/calc-app", version = "0.5.0" }
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

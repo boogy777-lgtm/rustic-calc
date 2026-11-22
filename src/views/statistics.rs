@@ -1,11 +1,10 @@
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
-
-use crate::actions::{Action, MemAction, StatsFunc};
+use crate::actions::Action;
 use crate::engine::{Mode, StatsState};
 use crate::ui::{metrics, Rect, Ui};
+use rustic_calc_app::keypad::{action_for_char, action_for_key, apply_statistics};
 
 use super::common::sidebar;
-use super::{Shared, View};
+use super::{keypad_key, Shared, View};
 
 pub struct StatisticsView {
     stats: StatsState,
@@ -15,40 +14,6 @@ impl StatisticsView {
     pub fn new() -> Self {
         Self {
             stats: StatsState::new(),
-        }
-    }
-
-    fn apply(&mut self, action: Action, shared: &mut Shared) {
-        let t = shared.text();
-        match action {
-            Action::StatsDigit(ch) => self.stats.digit(ch),
-            Action::StatsDecimal => self.stats.decimal(),
-            Action::StatsAdd => self.stats.add_data(),
-            Action::StatsClearAll => self.stats.clear_dataset(),
-            Action::StatsClear => self.stats.clear_entry(),
-            Action::StatsBackspace => self.stats.backspace(),
-            Action::StatsSign => self.stats.toggle_sign(),
-            Action::StatsExp => self.stats.exp_entry(),
-            Action::StatsCalc(func) => match func {
-                StatsFunc::Mean => self.stats.show(t.stats_average, self.stats.mean()),
-                StatsFunc::MeanSq => self
-                    .stats
-                    .show(t.stats_average_squares, self.stats.mean_squares()),
-                StatsFunc::Sum => self.stats.show(t.stats_sum, self.stats.sum()),
-                StatsFunc::SumSq => self
-                    .stats
-                    .show(t.stats_sum_squares, self.stats.sum_squares()),
-                StatsFunc::SdPop => self.stats.show(t.stats_sd, self.stats.std_dev_population()),
-                StatsFunc::SdSample => self
-                    .stats
-                    .show(t.stats_sd_sample, self.stats.std_dev_sample()),
-            },
-            Action::Mem(MemAction::Clear) => shared.memory = 0.0,
-            Action::Mem(MemAction::Recall) => self.stats.recall(shared.memory),
-            Action::Mem(MemAction::Store) => shared.memory = self.stats.current_value(),
-            Action::Mem(MemAction::Add) => shared.memory += self.stats.current_value(),
-            Action::Mem(MemAction::Sub) => shared.memory -= self.stats.current_value(),
-            _ => {}
         }
     }
 }
@@ -80,27 +45,29 @@ impl View for StatisticsView {
     }
 
     fn action(&mut self, action: Action, shared: &mut Shared) {
-        self.apply(action, shared);
+        let current = self.stats.current_value();
+        apply_statistics(
+            action,
+            shared.lang,
+            &mut self.stats,
+            &mut shared.memory,
+            current,
+        );
     }
 
     fn char(&mut self, ch: char, shared: &mut Shared) -> bool {
-        let action = match ch {
-            '0'..='9' => Action::StatsDigit(ch),
-            '.' | ',' => Action::StatsDecimal,
-            _ => return false,
+        let Some(action) = action_for_char(self.mode(), ch) else {
+            return false;
         };
-        self.apply(action, shared);
+        self.action(action, shared);
         true
     }
 
     fn key(&mut self, vk: u16, _ctrl: bool, shared: &mut Shared) -> bool {
-        let action = match vk {
-            VK_RETURN => Action::StatsAdd,
-            VK_BACK => Action::StatsBackspace,
-            VK_ESCAPE => Action::StatsClear,
-            _ => return false,
+        let Some(action) = keypad_key(vk).and_then(|key| action_for_key(self.mode(), key)) else {
+            return false;
         };
-        self.apply(action, shared);
+        self.action(action, shared);
         true
     }
 

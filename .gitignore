@@ -1,4 +1,5 @@
 /target/
+/editions/*/target/
 /dist/
 /artifacts/
 /shots/

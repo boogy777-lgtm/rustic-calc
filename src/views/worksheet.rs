@@ -2,11 +2,10 @@ use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::UI::WindowsAndMessaging::{CBN_SELCHANGE, EN_CHANGE};
 
 use crate::actions::{Action, KeyStyle};
-use crate::engine::{format_number, parse_number, Mode, WorksheetKind};
-use crate::i18n;
+use crate::engine::{Mode, WorksheetKind};
 use crate::platform;
 use crate::ui::{metrics, Rect, Stack, Ui};
-use crate::units::{self, WorksheetDef};
+use rustic_calc_app::worksheet::WorksheetSession;
 
 use super::common::sidebar;
 use super::{Shared, View};
@@ -93,46 +92,33 @@ fn layout(shared: &Shared, count: usize, target_index: usize) -> Layout {
 }
 
 pub struct WorksheetView {
-    kind: WorksheetKind,
-    def: WorksheetDef,
-    target: usize,
-    values: Vec<String>,
-    result: String,
-    error: String,
+    session: WorksheetSession,
     target_combo: HWND,
     edits: Vec<HWND>,
 }
 
 impl WorksheetView {
     pub fn new(kind: WorksheetKind) -> Self {
-        let def = units::worksheet_def(kind);
-        let target = def.default_target;
-        let mut values = vec![String::new(); def.args.len()];
-        if kind == WorksheetKind::Mortgage {
-            values[1] = "0".to_string();
-        }
         Self {
-            kind,
-            def,
-            target,
-            values,
-            result: String::new(),
-            error: String::new(),
+            session: WorksheetSession::new(kind),
             target_combo: std::ptr::null_mut(),
             edits: Vec::new(),
         }
     }
 
-    fn computable(&self) -> Vec<usize> {
-        (0..self.def.args.len())
-            .filter(|i| !self.def.non_computable.contains(i))
-            .collect()
+    fn target_index(&self) -> usize {
+        self.session
+            .fields()
+            .iter()
+            .position(|field| *field == self.session.target())
+            .unwrap_or(0)
     }
 
-    fn target_position(&self) -> usize {
-        self.computable()
+    fn target_option_index(&self) -> usize {
+        self.session
+            .target_options()
             .iter()
-            .position(|i| *i == self.target)
+            .position(|field| *field == self.session.target())
             .unwrap_or(0)
     }
 
@@ -141,27 +127,32 @@ impl WorksheetView {
         if shared.client.w <= 0 {
             return;
         }
-        let l = layout(shared, self.def.args.len(), self.target);
+        let l = layout(shared, self.session.fields().len(), self.target_index());
         let options: Vec<&str> = self
-            .computable()
+            .session
+            .target_options()
             .iter()
-            .map(|i| i18n::worksheet_arg(shared.lang, self.def.args[*i]))
+            .map(|field| field.label(shared.lang))
             .collect();
-        self.target_combo = shared.combo(ID_TARGET, l.target, &options, self.target_position());
+        self.target_combo = shared.combo(ID_TARGET, l.target, &options, self.target_option_index());
         self.edits = self
-            .def
-            .args
+            .session
+            .fields()
             .iter()
             .enumerate()
-            .map(|(i, _)| {
+            .map(|(i, field)| {
                 let r = l.rows[i];
-                let field = Rect::new(
+                let rect = Rect::new(
                     r.x + shared.s(FIELD_OFFSET),
                     r.y,
                     r.w - shared.s(FIELD_OFFSET),
                     r.h,
                 );
-                shared.edit(ID_FIELD + i as u16, field, &self.values[i])
+                shared.edit(
+                    ID_FIELD + i as u16,
+                    rect,
+                    self.session.text(*field).unwrap_or(""),
+                )
             })
             .collect();
         self.update_visibility();
@@ -176,7 +167,7 @@ impl WorksheetView {
     }
 
     fn move_controls(&self, shared: &Shared) {
-        let l = layout(shared, self.def.args.len(), self.target);
+        let l = layout(shared, self.session.fields().len(), self.target_index());
         let combo_h = shared.s(metrics::COMBO_POPUP_H);
         if !self.target_combo.is_null() {
             platform::move_control(
@@ -202,56 +193,18 @@ impl WorksheetView {
     }
 
     fn update_visibility(&self) {
+        let target = self.target_index();
         for (i, edit) in self.edits.iter().enumerate() {
-            platform::show_control(*edit, i != self.target);
+            platform::show_control(*edit, i != target);
         }
     }
 
-    fn sync_values(&mut self, _shared: &Shared) {
-        for (i, edit) in self.edits.iter().enumerate() {
-            if i != self.target && !edit.is_null() {
-                self.values[i] = platform::get_text(*edit);
-            }
-        }
-    }
-
-    fn recalc(&mut self, shared: &Shared) {
-        for (i, text) in self.values.iter().enumerate() {
-            if i != self.target && parse_number(text).filter(|v| v.is_finite()).is_none() {
-                self.result.clear();
-                let reason = if text.trim().is_empty() {
-                    shared.text().field_required
-                } else {
-                    shared.text().field_number
-                };
-                self.error = format!(
-                    "{}: {}",
-                    i18n::worksheet_arg(shared.lang, self.def.args[i]),
-                    reason
-                );
-                return;
-            }
-        }
-        let values: Vec<f64> = self
-            .values
-            .iter()
-            .enumerate()
-            .map(|(i, text)| {
-                if i == self.target {
-                    f64::NAN
-                } else {
-                    parse_number(text).unwrap_or(f64::NAN)
-                }
-            })
-            .collect();
-        match units::solve_worksheet(self.kind, self.target, &values) {
-            Ok(value) => {
-                self.result = format_number(value, shared.grouping);
-                self.error.clear();
-            }
-            Err(err) => {
-                self.result.clear();
-                self.error = i18n::runtime_error(shared.lang, &err);
+    fn sync_values(&mut self) {
+        let fields = self.session.fields().to_vec();
+        let target = self.target_index();
+        for (i, (field, edit)) in fields.iter().zip(self.edits.iter()).enumerate() {
+            if i != target && !edit.is_null() {
+                self.session.set_text(*field, platform::get_text(*edit));
             }
         }
     }
@@ -259,7 +212,7 @@ impl WorksheetView {
 
 impl View for WorksheetView {
     fn mode(&self) -> Mode {
-        Mode::Worksheet(self.kind)
+        Mode::Worksheet(self.session.kind())
     }
 
     fn on_enter(&mut self, shared: &mut Shared) {
@@ -293,17 +246,18 @@ impl View for WorksheetView {
             shared.text(),
             None,
         );
-        let l = layout(shared, self.def.args.len(), self.target);
+        let target = self.target_index();
+        let l = layout(shared, self.session.fields().len(), target);
         let t = shared.text();
         ui.heading(l.title, t.worksheet_title);
         let label_w = ui.s(LABEL_W);
         for (i, row) in l.rows.iter().enumerate() {
-            if i == self.target {
+            if i == target {
                 continue;
             }
             ui.form_label(
                 Rect::new(row.x, row.y, label_w, row.h),
-                i18n::worksheet_arg(shared.lang, self.def.args[i]),
+                self.session.fields()[i].label(shared.lang),
             );
         }
         ui.button(
@@ -314,18 +268,22 @@ impl View for WorksheetView {
         );
         ui.form_label(
             l.result_label,
-            i18n::worksheet_arg(shared.lang, self.def.args[self.target]),
+            self.session.fields()[target].label(shared.lang),
         );
-        ui.result_box(l.result, &self.result, false);
-        if !self.error.is_empty() {
-            ui.error(l.error, &self.error);
+        let result = self
+            .session
+            .formatted_result(shared.grouping)
+            .unwrap_or_default();
+        ui.result_box(l.result, &result, false);
+        if let Some(error) = self.session.display_error(shared.lang) {
+            ui.error(l.error, &error);
         }
     }
 
     fn action(&mut self, action: Action, shared: &mut Shared) {
         if matches!(action, Action::Calculate) {
-            self.sync_values(shared);
-            self.recalc(shared);
+            self.sync_values();
+            let _ = self.session.calculate();
             return;
         }
         let current = shared.sidebar.current_value();
@@ -334,35 +292,36 @@ impl View for WorksheetView {
 
     fn command(&mut self, id: u16, code: u16, shared: &mut Shared) -> bool {
         if id == ID_TARGET && u32::from(code) == CBN_SELCHANGE {
-            self.sync_values(shared);
+            self.sync_values();
             let pos = platform::combo_selected(self.target_combo);
-            self.target = *self.computable().get(pos).unwrap_or(&0);
-            self.result.clear();
-            self.error.clear();
+            if let Some(target) = self.session.target_options().get(pos).copied() {
+                self.session.set_target(target);
+            }
             self.update_visibility();
             self.move_controls(shared);
             return true;
         }
         if id >= ID_FIELD
-            && id < ID_FIELD + self.def.args.len() as u16
+            && id < ID_FIELD + self.session.fields().len() as u16
             && u32::from(code) == EN_CHANGE
         {
-            self.sync_values(shared);
-            self.result.clear();
-            self.error.clear();
+            self.sync_values();
             return true;
         }
         false
     }
 
-    fn display(&self, _shared: &Shared) -> String {
-        self.result.clone()
+    fn display(&self, shared: &Shared) -> String {
+        self.session
+            .formatted_result(shared.grouping)
+            .unwrap_or_default()
     }
 }
 
 #[cfg(test)]
 mod layout_tests {
     use super::*;
+    use crate::units;
 
     #[test]
     fn every_worksheet_target_has_compact_ordered_rows_and_labelled_result() {

@@ -8,16 +8,17 @@ Internal Rust interfaces may change between versions; do not promise ABI stabili
 
 1. Discuss the module's purpose, inputs, validation and supported targets in an
    issue. Dependency/platform changes require approval before implementation.
-2. Put numerical/state logic in a focused core module. Use typed inputs, results
+2. Put numerical/state logic in `crates/calc-app`. Use typed inputs, results
    and errors; reject missing, nonnumeric, nonfinite and out-of-range data.
-   Do not silently turn invalid fields into zero or require the target as input.
-3. Add a `View` implementation in `src/views/`. Implement `mode`, `paint`, `action`
-   and necessary `command`, `on_enter`, `on_exit`, `on_resize` methods.
-4. Register the mode explicitly: `Mode`, CLI parser, command IDs/menu, view factory,
-   manager index/capacity and preferred content size. Existing eleven-mode slots
-   and shortcuts are not automatically extensible. Preserve the original ten
+   Preserve raw editable drafts in the session. Do not silently turn invalid
+   fields into zero or require the target as input.
+3. Add the Win32 `View` in `src/views/` and corresponding frontend adapters.
+   On Win32 implement `mode`, `paint`, `action` and the necessary `command` and
+   lifecycle methods. Keep control creation, focus and geometry in the frontend.
+4. Register the mode in `startup::MODES`, the CLI parser and the applicable
+   frontend menus, view factories and content sizes. Preserve the original ten
    number shortcuts and Ctrl+G for coordinates; do not overwrite an existing
-   slot/hotkey. Extend registration and smoke tests coherently for another mode.
+   slot or hotkey. Extend registration and smoke tests coherently.
 5. Use `Shared::edit`/`combo`, shared widgets and `Action`; do not invent native
    control subclasses or embed raw HWND calls in the view. New reusable behavior
    belongs in `platform`/`ui` and needs its own lifecycle tests.

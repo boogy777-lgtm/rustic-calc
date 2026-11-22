@@ -2,11 +2,12 @@ use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::UI::WindowsAndMessaging::{CBN_SELCHANGE, EN_CHANGE};
 
 use crate::actions::Action;
-use crate::engine::{format_number, parse_number, Mode};
+use crate::engine::{format_number, Mode};
 use crate::i18n;
 use crate::platform;
 use crate::ui::{metrics, Rect, Stack, TextAlign, Ui};
 use crate::units::{self, Category, CategoryId};
+use rustic_calc_app::unit_session::{ConversionResult, UnitField, UnitIndex, UnitSession};
 
 use super::common::sidebar;
 use super::{Shared, View};
@@ -155,25 +156,8 @@ fn loop_layout(shared: &Shared, l: &Layout) -> LoopLayout {
     }
 }
 
-fn default_category_index(categories: &[Category]) -> usize {
-    categories
-        .iter()
-        .position(|category| category.id == CategoryId::Angle)
-        .unwrap_or(0)
-}
-
 pub struct UnitView {
-    categories: Vec<Category>,
-    category: usize,
-    from: usize,
-    to: usize,
-    input: String,
-    result: String,
-    voltage: String,
-    current_ma: String,
-    loop_resistance: String,
-    loop_power: String,
-    loop_standard: String,
+    session: UnitSession,
     category_combo: HWND,
     from_combo: HWND,
     to_combo: HWND,
@@ -184,20 +168,8 @@ pub struct UnitView {
 
 impl UnitView {
     pub fn new() -> Self {
-        let categories = units::categories();
-        let category = default_category_index(&categories);
         Self {
-            categories,
-            category,
-            from: 0,
-            to: 0,
-            input: String::new(),
-            result: String::new(),
-            voltage: "24".to_string(),
-            current_ma: "12".to_string(),
-            loop_resistance: String::new(),
-            loop_power: String::new(),
-            loop_standard: String::new(),
+            session: UnitSession::new(),
             category_combo: std::ptr::null_mut(),
             from_combo: std::ptr::null_mut(),
             to_combo: std::ptr::null_mut(),
@@ -208,44 +180,17 @@ impl UnitView {
     }
 
     fn category(&self) -> &Category {
-        &self.categories[self.category.min(self.categories.len() - 1)]
+        self.session.category()
     }
 
     fn is_dcs(&self) -> bool {
-        self.category().id == CategoryId::DcsSignals
+        self.session.category_id() == CategoryId::DcsSignals
     }
 
     fn sync_loop_visibility(&self) {
         let show = self.is_dcs();
         platform::show_control(self.voltage_edit, show);
         platform::show_control(self.current_edit, show);
-    }
-
-    fn recalc_loop(&mut self, shared: &Shared) {
-        let result = match (parse_number(&self.voltage), parse_number(&self.current_ma)) {
-            (Some(voltage), Some(current_ma)) => units::loop_resistor(voltage, current_ma),
-            _ => None,
-        };
-        if let Some(loop_value) = result {
-            self.loop_resistance = format!(
-                "R = {}",
-                units::format_resistance(loop_value.resistance, shared.grouping)
-            );
-            self.loop_power = format!(
-                "P = {} W  ·  ≥ {} W",
-                format_number(loop_value.power, shared.grouping),
-                format_number(loop_value.recommended_wattage, shared.grouping)
-            );
-            self.loop_standard = format!(
-                "E24: {} → {} mA",
-                units::format_resistance(loop_value.standard_resistance, shared.grouping),
-                format_number(loop_value.actual_current_ma, shared.grouping)
-            );
-        } else {
-            self.loop_resistance = "R = —".to_string();
-            self.loop_power = "P = —".to_string();
-            self.loop_standard = shared.text().loop_positive_values.to_string();
-        }
     }
 
     fn create_controls(&mut self, shared: &mut Shared) {
@@ -256,30 +201,57 @@ impl UnitView {
         let l = layout(shared);
         let ll = loop_layout(shared, &l);
         let names: Vec<&str> = self
-            .categories
+            .session
+            .categories()
             .iter()
             .map(|c| i18n::category(shared.lang, c.name))
             .collect();
-        self.category_combo = shared.combo(ID_CATEGORY, l.category, &names, self.category);
+        self.category_combo = shared.combo(
+            ID_CATEGORY,
+            l.category,
+            &names,
+            self.session.category_index(),
+        );
         let unit_count = self.category().units.len();
-        self.from = self.from.min(unit_count - 1);
-        self.to = self.to.min(unit_count - 1);
         let cat = self.category();
         let from_items: Vec<&str> = cat
             .units
             .iter()
             .map(|u| i18n::unit(shared.lang, u.name))
             .collect();
-        self.from_combo = shared.combo(ID_FROM, l.from_combo, &from_items, self.from);
-        self.to_combo = shared.combo(ID_TO, l.to_combo, &from_items, self.to);
-        self.input_edit = shared.edit(ID_INPUT, l.input, &self.input);
-        self.voltage_edit = shared.edit(ID_LOOP_VOLTAGE, ll.voltage_edit, &self.voltage);
-        self.current_edit = shared.edit(ID_LOOP_CURRENT, ll.current_edit, &self.current_ma);
-        self.voltage = platform::get_text(self.voltage_edit);
-        self.current_ma = platform::get_text(self.current_edit);
+        self.from_combo = shared.combo(
+            ID_FROM,
+            l.from_combo,
+            &from_items,
+            self.session.from_index().get().min(unit_count - 1),
+        );
+        self.to_combo = shared.combo(
+            ID_TO,
+            l.to_combo,
+            &from_items,
+            self.session.to_index().get().min(unit_count - 1),
+        );
+        self.input_edit = shared.edit(ID_INPUT, l.input, self.session.text(UnitField::Value));
+        self.voltage_edit = shared.edit(
+            ID_LOOP_VOLTAGE,
+            ll.voltage_edit,
+            self.session.text(UnitField::LoopVoltage),
+        );
+        self.current_edit = shared.edit(
+            ID_LOOP_CURRENT,
+            ll.current_edit,
+            self.session.text(UnitField::LoopCurrentMa),
+        );
+        self.session.set_text(
+            UnitField::LoopVoltage,
+            platform::get_text(self.voltage_edit),
+        );
+        self.session.set_text(
+            UnitField::LoopCurrentMa,
+            platform::get_text(self.current_edit),
+        );
         self.sync_loop_visibility();
         platform::set_focus(self.input_edit);
-        self.recalc(shared);
     }
 
     fn destroy_controls(&mut self) {
@@ -314,21 +286,8 @@ impl UnitView {
                 platform::combo_add(combo, item);
             }
         }
-        platform::combo_select(self.from_combo, self.from);
-        platform::combo_select(self.to_combo, self.to);
-    }
-
-    fn recalc(&mut self, shared: &Shared) {
-        let cat = self.category();
-        let from = &cat.units[self.from.min(cat.units.len() - 1)];
-        let to = &cat.units[self.to.min(cat.units.len() - 1)];
-        self.result = match parse_number(&self.input) {
-            Some(value) if value.is_finite() => {
-                format_number(units::convert(value, from, to), shared.grouping)
-            }
-            _ => String::new(),
-        };
-        self.recalc_loop(shared);
+        platform::combo_select(self.from_combo, self.session.from_index().get());
+        platform::combo_select(self.to_combo, self.session.to_index().get());
     }
 
     fn move_controls(&self, shared: &Shared) {
@@ -391,16 +350,18 @@ impl View for UnitView {
         ui.heading(l.title, t.unit_title);
         ui.form_label(l.from_label, t.from);
         ui.form_label(l.to_label, t.to);
-        let invalid_input = !self.input.trim().is_empty()
-            && parse_number(&self.input)
-                .filter(|v| v.is_finite())
-                .is_none();
-        let result = if invalid_input {
+        let conversion = self.session.conversion_result();
+        let invalid_input = conversion == ConversionResult::InvalidInput;
+        let result = match conversion {
+            ConversionResult::Value(value) => format_number(value, shared.grouping),
+            ConversionResult::Empty | ConversionResult::InvalidInput => String::new(),
+        };
+        let result_text = if invalid_input {
             t.error_invalid_input
         } else {
-            &self.result
+            &result
         };
-        ui.result_box(l.result, result, invalid_input);
+        ui.result_box(l.result, result_text, invalid_input);
 
         if self.is_dcs() {
             let ll = loop_layout(shared, &l);
@@ -408,23 +369,47 @@ impl View for UnitView {
             ui.heading(ll.title, t.dcs_loop_title);
             ui.form_label(ll.voltage_label, t.dcs_loop_voltage);
             ui.form_label(ll.current_label, t.dcs_loop_current);
+            let (resistance, power, standard) = match self.session.dcs_loop_result() {
+                Some(Ok(loop_value)) => (
+                    format!(
+                        "R = {}",
+                        units::format_resistance(loop_value.resistance, shared.grouping)
+                    ),
+                    format!(
+                        "P = {} W  ·  ≥ {} W",
+                        format_number(loop_value.power, shared.grouping),
+                        format_number(loop_value.recommended_wattage, shared.grouping)
+                    ),
+                    format!(
+                        "E24: {} → {} mA",
+                        units::format_resistance(loop_value.standard_resistance, shared.grouping),
+                        format_number(loop_value.actual_current_ma, shared.grouping)
+                    ),
+                ),
+                Some(Err(_)) => (
+                    "R = —".to_string(),
+                    "P = —".to_string(),
+                    t.loop_positive_values.to_string(),
+                ),
+                None => unreachable!("DCS helper is visible only in the DCS category"),
+            };
             ui.text(
                 ll.resistance,
-                &self.loop_resistance,
+                &resistance,
                 ui.fonts.title,
                 ui.palette.text,
                 TextAlign::Left,
             );
             ui.text(
                 ll.power,
-                &self.loop_power,
+                &power,
                 ui.fonts.body,
                 ui.palette.muted,
                 TextAlign::Left,
             );
             ui.text(
                 ll.standard,
-                &self.loop_standard,
+                &standard,
                 ui.fonts.body,
                 ui.palette.muted,
                 TextAlign::Left,
@@ -440,37 +425,47 @@ impl View for UnitView {
     fn command(&mut self, id: u16, code: u16, shared: &mut Shared) -> bool {
         match id {
             ID_CATEGORY if u32::from(code) == CBN_SELCHANGE => {
-                self.category = platform::combo_selected(self.category_combo);
-                self.from = 0;
-                self.to = 0;
+                if let Some(category) = self
+                    .session
+                    .categories()
+                    .get(platform::combo_selected(self.category_combo))
+                    .map(|category| category.id)
+                {
+                    let _ = self.session.select_category(category);
+                }
                 self.refill_units(shared);
                 self.sync_loop_visibility();
-                self.recalc(shared);
                 true
             }
             ID_FROM if u32::from(code) == CBN_SELCHANGE => {
-                self.from = platform::combo_selected(self.from_combo);
-                self.recalc(shared);
+                let _ = self
+                    .session
+                    .select_from(UnitIndex::new(platform::combo_selected(self.from_combo)));
                 true
             }
             ID_TO if u32::from(code) == CBN_SELCHANGE => {
-                self.to = platform::combo_selected(self.to_combo);
-                self.recalc(shared);
+                let _ = self
+                    .session
+                    .select_to(UnitIndex::new(platform::combo_selected(self.to_combo)));
                 true
             }
             ID_INPUT if !self.input_edit.is_null() && u32::from(code) == EN_CHANGE => {
-                self.input = platform::get_text(self.input_edit);
-                self.recalc(shared);
+                self.session
+                    .set_text(UnitField::Value, platform::get_text(self.input_edit));
                 true
             }
             ID_LOOP_VOLTAGE if !self.voltage_edit.is_null() && u32::from(code) == EN_CHANGE => {
-                self.voltage = platform::get_text(self.voltage_edit);
-                self.recalc_loop(shared);
+                self.session.set_text(
+                    UnitField::LoopVoltage,
+                    platform::get_text(self.voltage_edit),
+                );
                 true
             }
             ID_LOOP_CURRENT if !self.current_edit.is_null() && u32::from(code) == EN_CHANGE => {
-                self.current_ma = platform::get_text(self.current_edit);
-                self.recalc_loop(shared);
+                self.session.set_text(
+                    UnitField::LoopCurrentMa,
+                    platform::get_text(self.current_edit),
+                );
                 true
             }
             _ => false,
@@ -495,7 +490,10 @@ impl View for UnitView {
     }
 
     fn display(&self, _shared: &Shared) -> String {
-        self.result.clone()
+        match self.session.conversion_result() {
+            ConversionResult::Value(value) => format_number(value, _shared.grouping),
+            ConversionResult::Empty | ConversionResult::InvalidInput => String::new(),
+        }
     }
 }
 
@@ -506,15 +504,15 @@ mod layout_tests {
     #[test]
     fn category_identity_does_not_depend_on_name_or_position() {
         let mut view = UnitView::new();
-        view.categories.reverse();
-        view.category = default_category_index(&view.categories);
         assert_eq!(view.category().id, CategoryId::Angle);
-        view.category = view
-            .categories
+        let dcs = view
+            .session
+            .categories()
             .iter()
             .position(|c| c.id == CategoryId::DcsSignals)
             .unwrap();
-        view.categories[view.category].name = "Renamed signal category";
+        let dcs_id = view.session.categories()[dcs].id;
+        view.session.select_category(dcs_id).unwrap();
         assert!(view.is_dcs());
     }
 

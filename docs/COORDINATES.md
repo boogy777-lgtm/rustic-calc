@@ -106,7 +106,7 @@ Other public references consulted, not copied as software/resources:
 
 ## Mathematical implementation and accuracy limits
 
-`src/coordinates/` implements WGS84 geodetic → ECEF, inverse 3/7-parameter
+`crates/calc-app/src/coordinates/` implements WGS84 geodetic → ECEF, inverse 3/7-parameter
 datum operation, local ellipsoidal latitude/longitude and a sixth-order Krüger
 Transverse Mercator series. A ±30° central-meridian longitude limit prevents
 out-of-domain calculations; it does **not** validate a region or cadastral zone.

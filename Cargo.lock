@@ -4,10 +4,15 @@ version = 4
 
 [[package]]
 name = "rustic-calc"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
+ "rustic-calc-app",
  "windows-sys",
 ]
+
+[[package]]
+name = "rustic-calc-app"
+version = "0.5.0"
 
 [[package]]
 name = "windows-sys"

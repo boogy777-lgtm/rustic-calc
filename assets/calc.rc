@@ -15,11 +15,11 @@ BEGIN
   BLOCK "040904b0"
   BEGIN
    VALUE "CompanyName", "Rustic Calc contributors\0"
-   VALUE "FileDescription", "Rustic Calc\0"
+    VALUE "FileDescription", RUSTIC_FILE_DESCRIPTION "\0"
    VALUE "FileVersion", RUSTIC_VERSION_STRING "\0"
    VALUE "InternalName", "RusticCalc\0"
    VALUE "LegalCopyright", "Copyright (c) 2026 Rustic Calc contributors\0"
-   VALUE "OriginalFilename", "RusticCalc.exe\0"
+    VALUE "OriginalFilename", RUSTIC_ORIGINAL_FILENAME "\0"
    VALUE "ProductName", "Rustic Calc\0"
    VALUE "ProductVersion", RUSTIC_VERSION_STRING "\0"
   END

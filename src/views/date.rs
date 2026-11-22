@@ -1,3 +1,6 @@
+use rustic_calc_app::date::{
+    DateError, DateField, DateMode, DateOperation, DateOutcome, DateSession,
+};
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::UI::WindowsAndMessaging::{CBN_SELCHANGE, EN_CHANGE};
 
@@ -139,16 +142,7 @@ fn layout(shared: &Shared, difference: bool) -> Layout {
 }
 
 pub struct DateView {
-    difference: bool,
-    from: String,
-    to: String,
-    add_subtract: bool,
-    years: String,
-    months: String,
-    days: String,
-    result_a: String,
-    result_b: String,
-    error: String,
+    session: DateSession,
     mode_combo: HWND,
     from_edit: HWND,
     to_edit: HWND,
@@ -160,19 +154,11 @@ pub struct DateView {
 
 impl DateView {
     pub fn new() -> Self {
-        let today = units::today();
-        let text = units::format_date(today);
+        let (year, month, day) = platform::local_date();
+        let today = units::Date::new(year, month, day)
+            .unwrap_or_else(|| units::Date::new(1970, 1, 1).unwrap());
         Self {
-            difference: true,
-            from: text.clone(),
-            to: text,
-            add_subtract: true,
-            years: "0".to_string(),
-            months: "0".to_string(),
-            days: "0".to_string(),
-            result_a: String::new(),
-            result_b: String::new(),
-            error: String::new(),
+            session: DateSession::new(today),
             mode_combo: std::ptr::null_mut(),
             from_edit: std::ptr::null_mut(),
             to_edit: std::ptr::null_mut(),
@@ -183,28 +169,35 @@ impl DateView {
         }
     }
 
+    fn is_difference(&self) -> bool {
+        self.session.mode() == DateMode::Difference
+    }
+
     fn create_controls(&mut self, shared: &mut Shared) {
         self.destroy_controls();
         if shared.client.w <= 0 {
             return;
         }
-        let l = layout(shared, self.difference);
+        let l = layout(shared, self.is_difference());
         let t = shared.text();
         let modes = [t.date_diff_mode, t.date_shift_mode];
-        self.mode_combo =
-            shared.combo(ID_MODE, l.mode, &modes, if self.difference { 0 } else { 1 });
-        self.from_edit = shared.edit(ID_FROM, l.from_edit, &self.from);
-        self.to_edit = shared.edit(ID_TO, l.to_edit, &self.to);
+        self.mode_combo = shared.combo(ID_MODE, l.mode, &modes, usize::from(!self.is_difference()));
+        self.from_edit = shared.edit(ID_FROM, l.from_edit, self.session.text(DateField::From));
+        self.to_edit = shared.edit(ID_TO, l.to_edit, self.session.text(DateField::To));
         let ops = [t.add, t.subtract];
         self.op_combo = shared.combo(
             ID_OP,
             l.op_combo,
             &ops,
-            if self.add_subtract { 0 } else { 1 },
+            usize::from(self.session.operation() == DateOperation::Subtract),
         );
-        self.years_edit = shared.edit(ID_YEARS, l.years_edit, &self.years);
-        self.months_edit = shared.edit(ID_MONTHS, l.months_edit, &self.months);
-        self.days_edit = shared.edit(ID_DAYS, l.days_edit, &self.days);
+        self.years_edit = shared.edit(ID_YEARS, l.years_edit, self.session.text(DateField::Years));
+        self.months_edit = shared.edit(
+            ID_MONTHS,
+            l.months_edit,
+            self.session.text(DateField::Months),
+        );
+        self.days_edit = shared.edit(ID_DAYS, l.days_edit, self.session.text(DateField::Days));
         self.update_visibility();
         platform::set_focus(self.from_edit);
     }
@@ -231,15 +224,16 @@ impl DateView {
     }
 
     fn update_visibility(&self) {
-        platform::show_control(self.to_edit, self.difference);
-        platform::show_control(self.op_combo, !self.difference);
+        let difference = self.is_difference();
+        platform::show_control(self.to_edit, difference);
+        platform::show_control(self.op_combo, !difference);
         for c in [self.years_edit, self.months_edit, self.days_edit] {
-            platform::show_control(c, !self.difference);
+            platform::show_control(c, !difference);
         }
     }
 
     fn move_controls(&self, shared: &Shared) {
-        let l = layout(shared, self.difference);
+        let l = layout(shared, self.is_difference());
         let combo_h = shared.s(metrics::COMBO_POPUP_H);
         for (c, r, h) in [
             (self.mode_combo, l.mode, combo_h),
@@ -256,51 +250,14 @@ impl DateView {
         }
     }
 
-    fn calculate(&mut self, shared: &Shared) {
+    fn result_text(&self, shared: &Shared) -> String {
         let t = shared.text();
-        self.error.clear();
-        self.result_a.clear();
-        self.result_b.clear();
-        self.from = platform::get_text(self.from_edit);
-        self.to = platform::get_text(self.to_edit);
-        let from = units::parse_date(&self.from);
-        let Some(from) = from else {
-            self.error = t.invalid_date.to_string();
-            return;
-        };
-        if self.difference {
-            let Some(to) = units::parse_date(&self.to) else {
-                self.error = t.invalid_date.to_string();
-                return;
-            };
-            let (years, months, weeks, days, total) = units::date_difference(from, to);
-            self.result_a = i18n::date_parts(shared.lang, years, months, weeks, days);
-            self.result_b = format!("{} {}", total, t.days_suffix);
-        } else {
-            self.add_subtract = platform::combo_selected(self.op_combo) == 0;
-            self.years = platform::get_text(self.years_edit);
-            self.months = platform::get_text(self.months_edit);
-            self.days = platform::get_text(self.days_edit);
-            let parse_offset = |text: &str| text.trim().parse::<i32>().ok().filter(|v| *v >= 0);
-            let offsets = [
-                (&self.years, t.years),
-                (&self.months, t.months),
-                (&self.days, t.days),
-            ];
-            let mut parsed = [0; 3];
-            for (i, (value, label)) in offsets.iter().enumerate() {
-                let Some(number) = parse_offset(value) else {
-                    let reason = t.field_nonnegative_integer;
-                    self.error = format!("{label}: {reason}");
-                    return;
-                };
-                parsed[i] = number;
+        match self.session.result() {
+            Some(Ok(DateOutcome::Difference { total_days, .. })) => {
+                format!("{total_days} {}", t.days_suffix)
             }
-            let [years, months, days] = parsed;
-            match units::shift_date(from, years, months, days, self.add_subtract) {
-                Some(date) => self.result_b = units::format_date(date),
-                None => self.error = t.date_out_of_bound.to_string(),
-            }
+            Some(Ok(DateOutcome::Shifted(date))) => units::format_date(date),
+            _ => String::new(),
         }
     }
 }
@@ -341,23 +298,35 @@ impl View for DateView {
             shared.text(),
             None,
         );
-        let l = layout(shared, self.difference);
+        let l = layout(shared, self.is_difference());
         let t = shared.text();
+        let result = self.session.result();
+        let result_text = self.result_text(shared);
         ui.heading(l.title, t.date_title);
         ui.form_label(l.from_label, t.from);
-        if self.difference {
+        if self.is_difference() {
+            let parts = match result {
+                Some(Ok(DateOutcome::Difference {
+                    years,
+                    months,
+                    weeks,
+                    days,
+                    ..
+                })) => i18n::date_parts(shared.lang, years, months, weeks, days),
+                _ => String::new(),
+            };
             ui.form_label(l.to_label, t.to);
             ui.form_label(l.result_a_label, t.diff_ymwd);
-            ui.result_box(l.result_a, &self.result_a, false);
+            ui.result_box(l.result_a, &parts, false);
             ui.form_label(l.result_b_label, t.diff_days);
-            ui.result_box(l.result_b, &self.result_b, false);
+            ui.result_box(l.result_b, &result_text, false);
         } else {
             ui.form_label(l.op_label, t.operation);
             ui.form_label(l.years_label, t.years);
             ui.form_label(l.months_label, t.months);
             ui.form_label(l.days_label, t.days);
             ui.form_label(l.result_b_label, t.result_date);
-            ui.result_box(l.result_b, &self.result_b, false);
+            ui.result_box(l.result_b, &result_text, false);
         }
         ui.button(
             l.calculate,
@@ -365,14 +334,29 @@ impl View for DateView {
             KeyStyle::Normal,
             Action::Calculate,
         );
-        if !self.error.is_empty() {
-            ui.error(l.error, &self.error);
+        match result {
+            Some(Err(DateError::InvalidDate(_))) => ui.error(l.error, t.invalid_date),
+            Some(Err(DateError::InvalidOffset(field))) => {
+                let label = match field {
+                    DateField::Years => t.years,
+                    DateField::Months => t.months,
+                    DateField::Days => t.days,
+                    DateField::From => t.from,
+                    DateField::To => t.to,
+                };
+                ui.error(
+                    l.error,
+                    &format!("{label}: {}", t.field_nonnegative_integer),
+                );
+            }
+            Some(Err(DateError::OutOfBounds)) => ui.error(l.error, t.date_out_of_bound),
+            _ => {}
         }
     }
 
     fn action(&mut self, action: Action, shared: &mut Shared) {
         if matches!(action, Action::Calculate) {
-            self.calculate(shared);
+            self.session.calculate();
             return;
         }
         let current = shared.sidebar.current_value();
@@ -382,43 +366,44 @@ impl View for DateView {
     fn command(&mut self, id: u16, code: u16, shared: &mut Shared) -> bool {
         match id {
             ID_MODE if u32::from(code) == CBN_SELCHANGE => {
-                self.difference = platform::combo_selected(self.mode_combo) == 0;
-                self.result_a.clear();
-                self.result_b.clear();
-                self.error.clear();
+                self.session
+                    .set_mode(if platform::combo_selected(self.mode_combo) == 0 {
+                        DateMode::Difference
+                    } else {
+                        DateMode::Shift
+                    });
                 self.update_visibility();
                 self.move_controls(shared);
                 true
             }
             ID_FROM | ID_TO | ID_YEARS | ID_MONTHS | ID_DAYS if u32::from(code) == EN_CHANGE => {
-                let (control, value) = match id {
-                    ID_FROM => (self.from_edit, &mut self.from),
-                    ID_TO => (self.to_edit, &mut self.to),
-                    ID_YEARS => (self.years_edit, &mut self.years),
-                    ID_MONTHS => (self.months_edit, &mut self.months),
-                    _ => (self.days_edit, &mut self.days),
+                let (control, field) = match id {
+                    ID_FROM => (self.from_edit, DateField::From),
+                    ID_TO => (self.to_edit, DateField::To),
+                    ID_YEARS => (self.years_edit, DateField::Years),
+                    ID_MONTHS => (self.months_edit, DateField::Months),
+                    _ => (self.days_edit, DateField::Days),
                 };
                 if !control.is_null() {
-                    *value = platform::get_text(control);
+                    self.session.set_text(field, platform::get_text(control));
                 }
-                self.result_a.clear();
-                self.result_b.clear();
-                self.error.clear();
                 true
             }
             ID_OP if u32::from(code) == CBN_SELCHANGE => {
-                self.add_subtract = platform::combo_selected(self.op_combo) == 0;
-                self.result_a.clear();
-                self.result_b.clear();
-                self.error.clear();
+                self.session
+                    .set_operation(if platform::combo_selected(self.op_combo) == 0 {
+                        DateOperation::Add
+                    } else {
+                        DateOperation::Subtract
+                    });
                 true
             }
             _ => false,
         }
     }
 
-    fn display(&self, _shared: &Shared) -> String {
-        self.result_b.clone()
+    fn display(&self, shared: &Shared) -> String {
+        self.result_text(shared)
     }
 }
 

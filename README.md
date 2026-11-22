@@ -3,8 +3,9 @@
 [![Windows CI](https://github.com/boogy777-lgtm/rustic-calc/actions/workflows/ci.yml/badge.svg)](https://github.com/boogy777-lgtm/rustic-calc/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A small native Windows calculator written in Rust, using Win32/GDI instead of
-a browser engine or a GPU UI framework. MIT licensed. Russian and English UI.
+A Windows calculator written in Rust with Win32, Slint and GPUI editions.
+The original Win32 edition uses GDI and does not need a GPU UI framework.
+The app is MIT licensed and has a Russian and English UI.
 
 ![Scientific mode, dark theme](docs/images/scientific-dark.png)
 
@@ -12,10 +13,15 @@ a browser engine or a GPU UI framework. MIT licensed. Russian and English UI.
 
 Get the latest build from [Releases](https://github.com/boogy777-lgtm/rustic-calc/releases):
 
-- **`RusticCalc.exe`** — one portable executable; no install required.
-- **`RusticCalc-Setup.exe`** — per-user Windows installer with Start menu shortcut,
-  optional desktop shortcut and optional `calc` command integration.
-- `SHA256SUMS.txt` — hashes for verification.
+| Edition | Portable | Per-user installer |
+| --- | --- | --- |
+| Win32 | `RusticCalc.exe` | `RusticCalc-Setup.exe` |
+| Slint | `RusticCalc-Slint.exe` | `RusticCalc-Slint-Setup.exe` |
+| GPUI | `RusticCalc-GPUI.exe` | `RusticCalc-GPUI-Setup.exe` |
+
+`SHA256SUMS-Editions.txt` verifies all six EXEs. Older releases have a
+Win32-only `SHA256SUMS.txt`. Only the Win32 installer offers optional `calc`
+integration in CMD.
 
 The binaries are currently **unsigned**: Windows SmartScreen may display a warning.
 Verify the download source and SHA-256. Do not disable security software globally.
@@ -29,7 +35,7 @@ Verify the download source and SHA-256. Do not disable security software globall
 | Linux | Not supported; a native UI backend is needed. PRs welcome |
 | macOS | Not supported; a native UI backend is needed. PRs welcome |
 
-The current frontend uses Win32/GDI. A Windows executable is **not** a Linux or
+The original frontend uses Win32/GDI. A Windows executable is **not** a Linux or
 macOS build; Wine/emulation is not part of the support promise. Portability PRs
 should follow [the module contract](docs/MODULE_SDK.md), keep the mathematical
 engine independent, and discuss any dependency changes before implementation.
@@ -75,10 +81,18 @@ cargo build --release --locked
 
 The internal build filename remains `target/x86_64-pc-windows-msvc/release/calc1.exe`
 for compatibility with existing scripts. Release packaging renames that same
-binary to `RusticCalc.exe`; this is not a second application.
+binary to `RusticCalc.exe`; this is not a second application. Use
+`scripts/Build-Portable.ps1` before packaging to link the MSVC CRT statically.
 
-Only runtime dependency: **`windows-sys 0.59`**. Release builds use a portable
-x86-64 baseline, not `target-cpu=native`.
+Only third-party runtime dependency: **`windows-sys 0.59`**. The Win32 binary
+links the local, dependency-free `rustic-calc-app` crate for calculations,
+calculator sessions, and the common CLI. Release builds use a portable x86-64
+baseline, not `target-cpu=native`.
+
+Slint and GPUI are separate Windows frontend targets under `editions/`.
+Their dependencies are isolated from the standard Win32 build. See
+[edition packaging](docs/RELEASING.md#local-three-edition-bundle);
+all three editions are Windows x64 targets.
 
 The application is MIT; the embedded MSK catalogue retains Apache-2.0
 ([notices](NOTICE.md)). Community templates are not certified survey parameters.

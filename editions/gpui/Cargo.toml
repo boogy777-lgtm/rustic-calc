@@ -1,0 +1,30 @@
+[package]
+name = "rustic-calc-gpui"
+version = "0.5.0"
+edition = "2024"
+build = "build.rs"
+publish = false
+license = "MIT"
+
+[[bin]]
+name = "RusticCalc-GPUI"
+path = "src/main.rs"
+
+[dependencies]
+gpui = { version = "=0.2.2", default-features = false }
+rustic-calc-app = { path = "../../crates/calc-app" }
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_Xps",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

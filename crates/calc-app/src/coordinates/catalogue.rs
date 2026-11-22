@@ -2,8 +2,8 @@
 
 pub const SOURCE: &str = "https://github.com/geo-ts/msk";
 pub const REVISION: &str = "946049d80f0f4b4956a53383961c8c6f4431169f";
-pub const LICENSE: &str = include_str!("../../third_party/geo-ts-msk-LICENSE.txt");
-const DATA: &str = include_str!("../../data/msk_templates.tsv");
+pub const LICENSE: &str = include_str!("../../../../third_party/geo-ts-msk-LICENSE.txt");
+const DATA: &str = include_str!("../../../../data/msk_templates.tsv");
 
 #[derive(Debug, Clone, Copy)]
 pub struct Template {

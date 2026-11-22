@@ -180,7 +180,7 @@ fn all_templates_match_independent_proj4js_reference_points() {
     let templates: std::collections::BTreeMap<_, _> = catalogue::all().map(|t| (t.id, t)).collect();
     let mut count = 0;
     let mut maximum_error = 0.0_f64;
-    for line in include_str!("../../data/msk_reference.tsv")
+    for line in include_str!("../../../../data/msk_reference.tsv")
         .lines()
         .filter(|l| !l.starts_with('#') && !l.is_empty())
     {
@@ -213,7 +213,7 @@ fn all_templates_match_independent_proj4js_reference_points() {
 #[test]
 fn custom_parameters_match_independent_reference_including_three_value_datum_and_bounds() {
     let mut count = 0;
-    for line in include_str!("../../data/custom_coordinate_reference.tsv")
+    for line in include_str!("../../../../data/custom_coordinate_reference.tsv")
         .lines()
         .filter(|l| !l.starts_with('#') && !l.is_empty())
     {

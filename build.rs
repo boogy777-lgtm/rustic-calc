@@ -41,9 +41,31 @@ fn which(name: &str) -> Result<PathBuf, ()> {
 }
 
 fn main() {
-    println!("cargo:rerun-if-changed=assets/calc.rc");
-    println!("cargo:rerun-if-changed=assets/calc.ico");
-    println!("cargo:rerun-if-changed=assets/app.manifest");
+    compile_resources(Path::new("assets"), "Rustic Calc", "RusticCalc.exe");
+}
+
+pub fn compile_resources(assets: &Path, description: &str, filename: &str) {
+    compile_windows_resources(assets, description, filename, "");
+}
+
+#[allow(dead_code)]
+pub fn compile_resources_with_common_controls(assets: &Path, description: &str, filename: &str) {
+    // TaskDialogIndirect, used by GPUI, is exported by the version 6
+    // side-by-side library, not by the default version 5 activation context.
+    const COMCTL_V6: &str = concat!(
+        "<dependency><dependentAssembly>",
+        "<assemblyIdentity type=\"win32\" name=\"Microsoft.Windows.Common-Controls\" ",
+        "version=\"6.0.0.0\" processorArchitecture=\"*\" ",
+        "publicKeyToken=\"6595b64144ccf1df\" language=\"*\"/>",
+        "</dependentAssembly></dependency>",
+    );
+    compile_windows_resources(assets, description, filename, COMCTL_V6);
+}
+
+fn compile_windows_resources(assets: &Path, description: &str, filename: &str, dependencies: &str) {
+    for name in ["calc.rc", "calc.ico", "app.manifest"] {
+        println!("cargo:rerun-if-changed={}", assets.join(name).display());
+    }
     println!("cargo:rerun-if-env-changed=RC");
 
     let out = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
@@ -67,21 +89,22 @@ fn main() {
         "aarch64" => "arm64",
         other => panic!("unsupported Windows architecture: {other}"),
     };
-    let manifest = std::fs::read_to_string("assets/app.manifest")
+    let manifest = std::fs::read_to_string(assets.join("app.manifest"))
         .expect("read manifest template")
         .replace("@APP_VERSION@", &format!("{version}.0"))
-        .replace("@APP_ARCH@", arch);
+        .replace("@APP_ARCH@", arch)
+        .replace("@APP_DEPENDENCIES@", dependencies);
     let manifest_path = out.join("rustic-app.manifest");
     std::fs::write(&manifest_path, manifest).expect("write manifest");
     std::fs::write(out.join("version.h"), format!(
-        "#define RUSTIC_VERSION_QUAD {},{},{},0\n#define RUSTIC_VERSION_STRING \"{}\"\n#define RUSTIC_MANIFEST_PATH \"{}\"\n",
-        parts[0], parts[1], parts[2], version, manifest_path.to_string_lossy().replace('\\', "\\\\"))).expect("write version resource header");
+        "#define RUSTIC_VERSION_QUAD {},{},{},0\n#define RUSTIC_VERSION_STRING \"{}\"\n#define RUSTIC_MANIFEST_PATH \"{}\"\n#define RUSTIC_FILE_DESCRIPTION \"{}\"\n#define RUSTIC_ORIGINAL_FILENAME \"{}\"\n",
+        parts[0], parts[1], parts[2], version, manifest_path.to_string_lossy().replace('\\', "\\\\"), description, filename)).expect("write version resource header");
     let Some(rc) = find_rc() else {
         panic!("rc.exe is required; install the Windows SDK or set RC to its path");
     };
 
     let status = Command::new(&rc)
-        .current_dir("assets")
+        .current_dir(assets)
         .arg("/nologo")
         .arg("/c65001")
         .arg("/i")

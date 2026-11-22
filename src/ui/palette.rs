@@ -2,26 +2,13 @@
 
 use super::color::{rgb, Color};
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ThemeMode {
-    System,
-    White,
-    Dark,
-}
+pub use rustic_calc_app::startup::ThemeMode;
 
-impl ThemeMode {
-    pub fn resolve(self, system_dark: bool) -> &'static Palette {
-        match self {
-            Self::System => {
-                if system_dark {
-                    &DARK
-                } else {
-                    &LIGHT
-                }
-            }
-            Self::White => &WHITE,
-            Self::Dark => &DARK,
-        }
+pub fn resolve(theme: ThemeMode, system_dark: bool) -> &'static Palette {
+    match theme {
+        ThemeMode::White => &WHITE,
+        _ if theme.is_dark(system_dark) => &DARK,
+        _ => &LIGHT,
     }
 }
 

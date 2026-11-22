@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0
+
+- Three separate Windows x64 editions: Win32, Slint and GPUI, each with a
+  standalone executable and a per-user installer.
+- All editions share the dependency-free calculation library, eleven modes,
+  Russian and English, three themes and the screenshot CLI.
+- The Win32 installer keeps its existing identity and the optional `calc` CMD
+  integration; Slint and GPUI install independently.
+- Portable builds no longer require a separate Microsoft Visual C++ runtime.
+
 ## 0.4.0 — 2026-11-09
 
 - Eleventh mode: offline WGS84 → MSK, region/system/zone selection, Ctrl+G,

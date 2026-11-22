@@ -1,10 +1,9 @@
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
-
-use crate::actions::{programmer_keys, Action, MemAction};
+use crate::actions::{programmer_keys, Action};
 use crate::engine::{digit_allowed, Mode, ProgrammerState};
 use crate::ui::{metrics, Rect, TextAlign, Ui};
+use rustic_calc_app::keypad::{action_for_char, action_for_key, ProgrammerSession};
 
-use super::{Shared, View};
+use super::{keypad_key, Shared, View};
 
 const BIT_PANEL_H: f32 = metrics::PROGRAMMER_BITS_H;
 const BIT_GLYPH_INSET: f32 = 12.0;
@@ -35,39 +34,13 @@ fn selector_layout(panel: Rect, scale: f32) -> (Rect, Vec<Rect>) {
 }
 
 pub struct ProgrammerView {
-    prog: ProgrammerState,
+    session: ProgrammerSession,
 }
 
 impl ProgrammerView {
     pub fn new() -> Self {
         Self {
-            prog: ProgrammerState::new(),
-        }
-    }
-
-    fn apply(&mut self, action: Action, shared: &mut Shared) {
-        match action {
-            Action::ProgDigit(ch) if digit_allowed(self.prog.base, ch) => self.prog.digit(ch),
-            Action::ProgDigit(_) => {}
-            Action::ProgBin(op) => self.prog.push_op(op),
-            Action::ProgEquals => self.prog.equals(),
-            Action::ProgNot => self.prog.not(),
-            Action::ProgSign => self.prog.toggle_sign(),
-            Action::ProgBackspace => self.prog.backspace(),
-            Action::ProgClearEntry => self.prog.clear_entry(),
-            Action::ProgClear => self.prog.clear_all(),
-            Action::ProgSqrt => self.prog.sqrt(),
-            Action::ProgRecip => self.prog.reciprocal(),
-            Action::ProgBase(base) => self.prog.set_base(base),
-            Action::ProgWord(word) => self.prog.set_word(word),
-            Action::ProgBit(bit) => self.prog.toggle_bit(bit),
-            Action::Mem(MemAction::Clear) => shared.memory = 0.0,
-            Action::Mem(MemAction::Recall) => self.prog.recall(shared.memory as u64),
-            Action::Mem(MemAction::Store) => shared.memory = self.prog.value as f64,
-            Action::Mem(MemAction::Add) => shared.memory += self.prog.value as f64,
-            Action::Mem(MemAction::Sub) => shared.memory -= self.prog.value as f64,
-            Action::ParenOpen | Action::ParenClose => {}
-            _ => {}
+            session: ProgrammerSession::new(),
         }
     }
 
@@ -162,9 +135,10 @@ impl View for ProgrammerView {
             ui.s(metrics::DISPLAY_H),
         );
         let text = self.display(shared);
-        let expression = self.prog.expression();
+        let prog = &self.session.state;
+        let expression = prog.expression();
         let inner = display.inset(ui.s(metrics::PAD_DISPLAY));
-        if self.prog.base == 2 && ui.canvas.measure(&text, ui.fonts.display_small) > inner.w {
+        if prog.base == 2 && ui.canvas.measure(&text, ui.fonts.display_small) > inner.w {
             ui.surface(
                 display,
                 ui.s(metrics::RADIUS_CONTROL),
@@ -183,7 +157,7 @@ impl View for ProgrammerView {
             let second = groups[split..].join(" ");
             let h = (inner.h - ui.s(metrics::EXPRESSION_H)).max(2) / 2;
             let top = inner.bottom() - h * 2;
-            let color = if self.prog.error.is_some() {
+            let color = if prog.error.is_some() {
                 ui.palette.error
             } else {
                 ui.palette.text
@@ -203,7 +177,7 @@ impl View for ProgrammerView {
                 TextAlign::Right,
             );
         } else {
-            ui.display(display, &text, &expression, self.prog.error.is_some());
+            ui.display(display, &text, &expression, prog.error.is_some());
         }
         let bits = Rect::new(
             client.x + m,
@@ -211,7 +185,7 @@ impl View for ProgrammerView {
             client.w - m * 2,
             ui.s(BIT_PANEL_H),
         );
-        Self::bit_panel(ui, bits, &self.prog);
+        Self::bit_panel(ui, bits, prog);
 
         let top = bits.bottom() + gap;
         let group_gap = ui.s(metrics::GAP_BLOCK);
@@ -228,7 +202,7 @@ impl View for ProgrammerView {
                 cell,
                 label,
                 Action::ProgBase(base_value),
-                self.prog.base == base_value,
+                prog.base == base_value,
             );
         }
 
@@ -245,7 +219,7 @@ impl View for ProgrammerView {
             rows.into_iter()
                 .zip([(64, t.qword), (32, t.dword), (16, t.word), (8, t.byte)])
         {
-            ui.selector_item(cell, label, Action::ProgWord(word), self.prog.word == word);
+            ui.selector_item(cell, label, Action::ProgWord(word), prog.word == word);
         }
 
         let key_x = base.right() + ui.s(COLUMN_GAP);
@@ -253,7 +227,7 @@ impl View for ProgrammerView {
         let mut keys = programmer_keys();
         for key in &mut keys {
             key.enabled = match key.action {
-                Action::ProgDigit(ch) => digit_allowed(self.prog.base, ch),
+                Action::ProgDigit(ch) => digit_allowed(prog.base, ch),
                 Action::None => false,
                 _ => true,
             };
@@ -268,43 +242,27 @@ impl View for ProgrammerView {
     }
 
     fn action(&mut self, action: Action, shared: &mut Shared) {
-        self.apply(action, shared);
+        self.session.apply(action, &mut shared.memory);
     }
 
     fn char(&mut self, ch: char, shared: &mut Shared) -> bool {
-        let action = match ch {
-            '0'..='9' | 'a'..='f' | 'A'..='F' => {
-                if !digit_allowed(self.prog.base, ch) {
-                    return true;
-                }
-                Action::ProgDigit(ch)
-            }
-            '+' => Action::ProgBin(crate::engine::ProgOp::Add),
-            '-' => Action::ProgBin(crate::engine::ProgOp::Sub),
-            '*' => Action::ProgBin(crate::engine::ProgOp::Mul),
-            '/' => Action::ProgBin(crate::engine::ProgOp::Div),
-            '%' => Action::ProgBin(crate::engine::ProgOp::Mod),
-            '=' => Action::ProgEquals,
-            _ => return false,
+        let Some(action) = action_for_char(self.mode(), ch) else {
+            return false;
         };
-        self.apply(action, shared);
+        self.action(action, shared);
         true
     }
 
     fn key(&mut self, vk: u16, _ctrl: bool, shared: &mut Shared) -> bool {
-        let action = match vk {
-            VK_RETURN => Action::ProgEquals,
-            VK_BACK => Action::ProgBackspace,
-            VK_ESCAPE => Action::ProgClear,
-            VK_DELETE => Action::ProgClearEntry,
-            _ => return false,
+        let Some(action) = keypad_key(vk).and_then(|key| action_for_key(self.mode(), key)) else {
+            return false;
         };
-        self.apply(action, shared);
+        self.action(action, shared);
         true
     }
 
     fn display(&self, shared: &Shared) -> String {
-        crate::i18n::runtime_error(shared.lang, &self.prog.display())
+        self.session.display(shared.lang)
     }
 }
 
